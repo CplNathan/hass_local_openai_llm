@@ -17,6 +17,7 @@ from homeassistant.config_entries import (
 from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API, CONF_MODEL, CONF_PROMPT
 from homeassistant.core import callback
 from homeassistant.helpers import llm
+from homeassistant.helpers.config_validation import url
 from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.selector import (
     NumberSelector,
@@ -28,6 +29,7 @@ from homeassistant.helpers.selector import (
     TemplateSelector,
 )
 from openai import AsyncOpenAI, OpenAIError
+from homeassistant.data_entry_flow import section
 
 from .const import (
     CONF_BASE_URL,
@@ -39,6 +41,12 @@ from .const import (
     CONF_TEMPERATURE,
     DOMAIN,
     RECOMMENDED_CONVERSATION_OPTIONS,
+    CONF_QDRANT_HOST,
+    CONF_QDRANT_OPTIONS,
+    CONF_QDRANT_COLLECTION,
+    CONF_QDRANT_MAX_RESULTS,
+    CONF_QDRANT_THRESHOLD,
+    CONF_QDRANT_DEFAULT_THRESHOLD,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -201,6 +209,44 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                         step=1,
                         mode=NumberSelectorMode.BOX,
                     )
+                ),
+                vol.Optional(CONF_QDRANT_OPTIONS): section(
+                    schema=vol.Schema(
+                        schema={
+                            vol.Optional(
+                                CONF_QDRANT_HOST, default=options.get(CONF_QDRANT_HOST)
+                            ): url,
+                            vol.Optional(
+                                CONF_QDRANT_COLLECTION,
+                                default=options.get(CONF_QDRANT_COLLECTION),
+                            ): str,
+                            vol.Optional(
+                                CONF_QDRANT_MAX_RESULTS,
+                                default=options.get(CONF_QDRANT_MAX_RESULTS, 1),
+                            ): NumberSelector(
+                                NumberSelectorConfig(
+                                    min=1,
+                                    max=5,
+                                    step=1,
+                                    mode=NumberSelectorMode.SLIDER,
+                                )
+                            ),
+                            vol.Optional(
+                                CONF_QDRANT_THRESHOLD,
+                                default=options.get(
+                                    CONF_QDRANT_THRESHOLD, CONF_QDRANT_DEFAULT_THRESHOLD
+                                ),
+                            ): NumberSelector(
+                                NumberSelectorConfig(
+                                    min=0,
+                                    max=1,
+                                    step=0.01,
+                                    mode=NumberSelectorMode.SLIDER,
+                                )
+                            ),
+                        }
+                    ),
+                    options={"collapsed": True},
                 ),
             }
         )

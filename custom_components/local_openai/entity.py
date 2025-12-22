@@ -34,6 +34,8 @@ from openai.types.chat import (
 from openai.types.chat.chat_completion_message_function_tool_call_param import Function
 from openai.types.shared_params import FunctionDefinition, ResponseFormatJSONSchema
 from openai.types.shared_params.response_format_json_schema import JSONSchema
+from qdrant_client import QdrantClient, models
+from sentence_transformers import SentenceTransformer
 from voluptuous_openapi import convert
 
 from . import LocalAiConfigEntry
@@ -45,6 +47,11 @@ from .const import (
     CONF_TEMPERATURE,
     DOMAIN,
     LOGGER,
+    CONF_QDRANT_HOST,
+    CONF_QDRANT_COLLECTION,
+    CONF_QDRANT_THRESHOLD,
+    CONF_QDRANT_DEFAULT_THRESHOLD,
+    CONF_QDRANT_MAX_RESULTS,
 )
 from .prompt import format_custom_prompt
 
@@ -106,7 +113,9 @@ def _format_tool(
         parameters=convert(tool.parameters, custom_serializer=custom_serializer),
     )
     tool_spec["description"] = (
-        tool.description if tool.description is not None and tool.description.strip() else "A callable function"
+        tool.description
+        if tool.description is not None and tool.description.strip()
+        else "A callable function"
     )
     return ChatCompletionFunctionToolParam(type="function", function=tool_spec)
 
@@ -287,6 +296,13 @@ class LocalAiEntity(Entity):
             entry_type=dr.DeviceEntryType.SERVICE,
         )
 
+        self._embedding_model = (
+            SentenceTransformer("all-MiniLM-L6-v2")
+            if subentry.data.get(CONF_QDRANT_HOST)
+            and subentry.data.get(CONF_QDRANT_COLLECTION)
+            else None
+        )
+
     async def _async_handle_chat_log(
         self,
         chat_log: conversation.ChatLog,
@@ -337,6 +353,21 @@ class LocalAiEntity(Entity):
                 role="system", content=prompt
             )
 
+        # Qdrant semantic similarity / RAG
+        if self._embedding_model:
+            tensor = self._embedding_model.encode(user_input.text)
+            tensor_size = tensor.shape[0]
+            qdrant = QdrantClient(options.get(CONF_QDRANT_HOST))
+            result = self._qdrant_client.query_points(
+                collection_name=options.get(CONF_QDRANT_COLLECTION),
+                query=[*tensor[:tensor_size]],
+                score_threshold=options.get(
+                    CONF_QDRANT_THRESHOLD, CONF_QDRANT_DEFAULT_THRESHOLD
+                ),
+                limit=options.get(CONF_QDRANT_MAX_RESULTS, 1),
+            )
+            LOGGER.warning(result)
+
         model_args["messages"] = messages
 
         if structure:
@@ -366,7 +397,9 @@ class LocalAiEntity(Entity):
                         msg
                         async for content in chat_log.async_add_delta_content_stream(
                             self.entity_id,
-                            _transform_stream(stream=result_stream, strip_emojis=strip_emojis),
+                            _transform_stream(
+                                stream=result_stream, strip_emojis=strip_emojis
+                            ),
                         )
                         if (msg := await _convert_content_to_chat_message(content))
                     ]
