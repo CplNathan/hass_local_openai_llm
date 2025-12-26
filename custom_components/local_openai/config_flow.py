@@ -16,8 +16,8 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API, CONF_MODEL, CONF_PROMPT
 from homeassistant.core import callback
+from homeassistant.data_entry_flow import section
 from homeassistant.helpers import llm
-from homeassistant.helpers.config_validation import url
 from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.selector import (
     NumberSelector,
@@ -29,24 +29,25 @@ from homeassistant.helpers.selector import (
     TemplateSelector,
 )
 from openai import AsyncOpenAI, OpenAIError
-from homeassistant.data_entry_flow import section
 
 from .const import (
     CONF_BASE_URL,
-    CONF_MANUAL_PROMPTING,
     CONF_MAX_MESSAGE_HISTORY,
     CONF_PARALLEL_TOOL_CALLS,
     CONF_SERVER_NAME,
     CONF_STRIP_EMOJIS,
     CONF_TEMPERATURE,
+    CONF_WEAVIATE_API_KEY,
+    CONF_WEAVIATE_CLASS_NAME,
+    CONF_WEAVIATE_DEFAULT_CLASS_NAME,
+    CONF_WEAVIATE_DEFAULT_MAX_RESULTS,
+    CONF_WEAVIATE_DEFAULT_THRESHOLD,
+    CONF_WEAVIATE_HOST,
+    CONF_WEAVIATE_MAX_RESULTS,
+    CONF_WEAVIATE_OPTIONS,
+    CONF_WEAVIATE_THRESHOLD,
     DOMAIN,
     RECOMMENDED_CONVERSATION_OPTIONS,
-    CONF_QDRANT_HOST,
-    CONF_QDRANT_OPTIONS,
-    CONF_QDRANT_COLLECTION,
-    CONF_QDRANT_MAX_RESULTS,
-    CONF_QDRANT_THRESHOLD,
-    CONF_QDRANT_DEFAULT_THRESHOLD,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -67,6 +68,45 @@ class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
             "conversation": ConversationFlowHandler,
             "ai_task_data": AITaskDataFlowHandler,
         }
+
+    @staticmethod
+    def get_schema(options: dict):
+        weaviate_opts = options.get(CONF_WEAVIATE_OPTIONS, {})
+
+        return vol.Schema(
+            {
+                vol.Required(
+                    CONF_SERVER_NAME,
+                    default=options.get(CONF_SERVER_NAME, "Local LLM Server"),
+                ): str,
+                vol.Required(
+                    CONF_BASE_URL, default=options.get(CONF_BASE_URL, "")
+                ): str,
+                vol.Optional(CONF_API_KEY, default=options.get(CONF_API_KEY, "")): str,
+                vol.Optional(CONF_WEAVIATE_OPTIONS): section(
+                    schema=vol.Schema(
+                        schema={
+                            vol.Optional(
+                                CONF_WEAVIATE_HOST,
+                                default=weaviate_opts.get(CONF_WEAVIATE_HOST, ""),
+                            ): str,
+                            vol.Optional(
+                                CONF_WEAVIATE_API_KEY,
+                                default=weaviate_opts.get(CONF_WEAVIATE_API_KEY, ""),
+                            ): str,
+                            vol.Optional(
+                                CONF_WEAVIATE_CLASS_NAME,
+                                default=weaviate_opts.get(
+                                    CONF_WEAVIATE_CLASS_NAME,
+                                    CONF_WEAVIATE_DEFAULT_CLASS_NAME,
+                                ),
+                            ): str,
+                        }
+                    ),
+                    options={"collapsed": True},
+                ),
+            }
+        )
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -103,14 +143,28 @@ class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_SERVER_NAME, default="Local LLM Server"): str,
-                    vol.Required(CONF_BASE_URL): str,
-                    vol.Optional(CONF_API_KEY): str,
-                }
-            ),
+            data_schema=self.get_schema({}),
             errors=errors,
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """User flow to create a sensor subentry."""
+        if user_input is not None:
+            if not user_input.get(CONF_LLM_HASS_API):
+                user_input.pop(CONF_LLM_HASS_API, None)
+            return self.async_update_reload_and_abort(
+                entry=self._get_reconfigure_entry(),
+                title=f"{user_input.get(CONF_SERVER_NAME, 'Local LLM Server')}",
+                data=user_input,
+            )
+
+        options = self._get_reconfigure_entry().data.copy()
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self.get_schema(options),
         )
 
 
@@ -139,6 +193,7 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
     async def get_schema(self, options: dict = {}):
         llm_apis = self.get_llm_apis()
         client = self._get_entry().runtime_data
+        weaviate_opts = options.get(CONF_WEAVIATE_OPTIONS, {})
 
         try:
             response = await client.models.list()
@@ -156,73 +211,74 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
             _LOGGER.exception(f"Unexpected exception retrieving models list: {err}")
             downloaded_models = []
 
-        return vol.Schema(
-            {
-                vol.Required(
-                    CONF_MODEL,
-                    default=options.get(CONF_MODEL),
-                ): SelectSelector(
-                    SelectSelectorConfig(options=downloaded_models, custom_value=True)
+        schema = {
+            vol.Required(
+                CONF_MODEL,
+                default=options.get(CONF_MODEL),
+            ): SelectSelector(
+                SelectSelectorConfig(options=downloaded_models, custom_value=True)
+            ),
+            vol.Optional(
+                CONF_PROMPT,
+                default=options.get(
+                    CONF_PROMPT, RECOMMENDED_CONVERSATION_OPTIONS[CONF_PROMPT]
                 ),
-                vol.Optional(
-                    CONF_PROMPT,
-                    default=options.get(
-                        CONF_PROMPT, RECOMMENDED_CONVERSATION_OPTIONS[CONF_PROMPT]
-                    ),
-                ): TemplateSelector(),
-                vol.Optional(
+            ): TemplateSelector(),
+            vol.Optional(
+                CONF_LLM_HASS_API,
+                default=options.get(
                     CONF_LLM_HASS_API,
-                    default=options.get(
-                        CONF_LLM_HASS_API,
-                        RECOMMENDED_CONVERSATION_OPTIONS[CONF_LLM_HASS_API],
-                    ),
-                ): SelectSelector(
-                    SelectSelectorConfig(options=llm_apis, multiple=True)
+                    RECOMMENDED_CONVERSATION_OPTIONS[CONF_LLM_HASS_API],
                 ),
-                vol.Optional(
-                    CONF_PARALLEL_TOOL_CALLS,
-                    default=options.get(CONF_PARALLEL_TOOL_CALLS, True),
-                ): bool,
-                vol.Optional(
-                    CONF_STRIP_EMOJIS,
-                    default=options.get(CONF_STRIP_EMOJIS, False),
-                ): bool,
-                vol.Optional(
-                    CONF_MANUAL_PROMPTING,
-                    default=options.get(CONF_MANUAL_PROMPTING, False),
-                ): bool,
-                vol.Optional(
-                    CONF_TEMPERATURE,
-                    default=options.get(CONF_TEMPERATURE, 0.6),
-                ): NumberSelector(
-                    NumberSelectorConfig(
-                        min=0, max=1, step=0.01, mode=NumberSelectorMode.BOX
-                    )
-                ),
-                vol.Optional(
-                    CONF_MAX_MESSAGE_HISTORY,
-                    default=options.get(CONF_MAX_MESSAGE_HISTORY, 0),
-                ): NumberSelector(
-                    NumberSelectorConfig(
-                        min=0,
-                        max=50,
-                        step=1,
-                        mode=NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Optional(CONF_QDRANT_OPTIONS): section(
+            ): SelectSelector(SelectSelectorConfig(options=llm_apis, multiple=True)),
+            vol.Optional(
+                CONF_PARALLEL_TOOL_CALLS,
+                default=options.get(CONF_PARALLEL_TOOL_CALLS, True),
+            ): bool,
+            vol.Optional(
+                CONF_STRIP_EMOJIS,
+                default=options.get(CONF_STRIP_EMOJIS, False),
+            ): bool,
+            vol.Optional(
+                CONF_TEMPERATURE,
+                default=options.get(CONF_TEMPERATURE, 0.6),
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=0, max=1, step=0.01, mode=NumberSelectorMode.BOX
+                )
+            ),
+            vol.Optional(
+                CONF_MAX_MESSAGE_HISTORY,
+                default=options.get(CONF_MAX_MESSAGE_HISTORY, 0),
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=0,
+                    max=50,
+                    step=1,
+                    mode=NumberSelectorMode.BOX,
+                )
+            ),
+        }
+        entry = self._get_entry()
+        if entry.data.get(CONF_WEAVIATE_OPTIONS, {}).get(CONF_WEAVIATE_HOST):
+            schema = {
+                **schema,
+                vol.Optional(CONF_WEAVIATE_OPTIONS): section(
                     schema=vol.Schema(
                         schema={
                             vol.Optional(
-                                CONF_QDRANT_HOST, default=options.get(CONF_QDRANT_HOST)
-                            ): url,
-                            vol.Optional(
-                                CONF_QDRANT_COLLECTION,
-                                default=options.get(CONF_QDRANT_COLLECTION),
+                                CONF_WEAVIATE_CLASS_NAME,
+                                default=weaviate_opts.get(
+                                    CONF_WEAVIATE_CLASS_NAME,
+                                    "",
+                                ),
                             ): str,
                             vol.Optional(
-                                CONF_QDRANT_MAX_RESULTS,
-                                default=options.get(CONF_QDRANT_MAX_RESULTS, 1),
+                                CONF_WEAVIATE_MAX_RESULTS,
+                                default=weaviate_opts.get(
+                                    CONF_WEAVIATE_MAX_RESULTS,
+                                    CONF_WEAVIATE_DEFAULT_MAX_RESULTS,
+                                ),
                             ): NumberSelector(
                                 NumberSelectorConfig(
                                     min=1,
@@ -232,9 +288,10 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                                 )
                             ),
                             vol.Optional(
-                                CONF_QDRANT_THRESHOLD,
-                                default=options.get(
-                                    CONF_QDRANT_THRESHOLD, CONF_QDRANT_DEFAULT_THRESHOLD
+                                CONF_WEAVIATE_THRESHOLD,
+                                default=weaviate_opts.get(
+                                    CONF_WEAVIATE_THRESHOLD,
+                                    CONF_WEAVIATE_DEFAULT_THRESHOLD,
                                 ),
                             ): NumberSelector(
                                 NumberSelectorConfig(
@@ -249,7 +306,8 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                     options={"collapsed": True},
                 ),
             }
-        )
+
+        return vol.Schema(schema)
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None

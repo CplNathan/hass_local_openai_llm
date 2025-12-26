@@ -19,11 +19,8 @@
 - Added option to trim conversation history to help stay within your context window
 - Added temperature control
 - Added option to strip emojis from responses
-- Added option to take full manual control of the prompt
-  - This will remove ALL content that Home Assistant normally inserts when compiling the system prompt that's sent to the LLM
-  - Additional variables are exposed to the prompt jinja template for tools, entities, voice-satellite area, etc
-  - **For advanced use only: not recommended for most users, and not yet documented here**
-- Added support for parallel tool calling 
+- Added support for parallel tool calling
+- Added experimental Retrieval Augmented Generation capability
 
 ---
 
@@ -73,6 +70,22 @@ After installation, configure the integration through Home Assistant's UI:
 - Parallel tool calling requires support from both your model and inference server.
   - In some cases, control of this is handled by the server directly, in which case toggling this will not have any result.  
 
+## Retrieval Augmented Generation (RAG) with Weaviate
+
+Retrieval Augmented Generation is used to pre-feed your LLM messages with related data to provide contextually relevant information to the model based on the user input message.
+
+This integration supports connecting your Agent to a Weaviate vector database server.
+Once configured, user messages to the Agent will be queried against the Weaviate database first, and the result data pre-emptively injected into the current conversation as contextual data for the Agent to utilise in their response. 
+
+### Weaviate Configuration
+
+
+### Agent Configuration
+
+### Notes
+
+- Only the current generations user message is queried in the database, no prior user messages are included
+
 ## Additional
 
 Looking to add some more functionality to your Home Assistant conversation agent, such as web and localised business/location search? Check out my [Tools for Assist](https://github.com/skye-harris/llm_intents) integration here!
@@ -80,7 +93,6 @@ Looking to add some more functionality to your Home Assistant conversation agent
 ## Acknowledgements
 
 - This integration is forked from the [OpenRouter](https://github.com/home-assistant/core/tree/dev/homeassistant/components/open_router) integration for Home Assistant by [@joostlek](https://github.com/joostlek)
-- This integration uses code from the [Local LLMs](https://github.com/acon96/home-llm) integration for Home Assistant by [@acon96](https://github.com/acon96/home-llm) 
 
 ---
 

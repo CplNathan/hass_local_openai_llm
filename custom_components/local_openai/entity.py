@@ -34,26 +34,27 @@ from openai.types.chat import (
 from openai.types.chat.chat_completion_message_function_tool_call_param import Function
 from openai.types.shared_params import FunctionDefinition, ResponseFormatJSONSchema
 from openai.types.shared_params.response_format_json_schema import JSONSchema
-from qdrant_client import QdrantClient, models
-from sentence_transformers import SentenceTransformer
 from voluptuous_openapi import convert
 
 from . import LocalAiConfigEntry
 from .const import (
-    CONF_MANUAL_PROMPTING,
     CONF_MAX_MESSAGE_HISTORY,
     CONF_PARALLEL_TOOL_CALLS,
     CONF_STRIP_EMOJIS,
     CONF_TEMPERATURE,
+    CONF_WEAVIATE_API_KEY,
+    CONF_WEAVIATE_CLASS_NAME,
+    CONF_WEAVIATE_DEFAULT_CLASS_NAME,
+    CONF_WEAVIATE_DEFAULT_MAX_RESULTS,
+    CONF_WEAVIATE_DEFAULT_THRESHOLD,
+    CONF_WEAVIATE_HOST,
+    CONF_WEAVIATE_MAX_RESULTS,
+    CONF_WEAVIATE_OPTIONS,
+    CONF_WEAVIATE_THRESHOLD,
     DOMAIN,
     LOGGER,
-    CONF_QDRANT_HOST,
-    CONF_QDRANT_COLLECTION,
-    CONF_QDRANT_THRESHOLD,
-    CONF_QDRANT_DEFAULT_THRESHOLD,
-    CONF_QDRANT_MAX_RESULTS,
 )
-from .prompt import format_custom_prompt
+from .weaviate import WeaviateClient
 
 # Max number of back and forth with the LLM to generate a response
 MAX_TOOL_ITERATIONS = 10
@@ -194,14 +195,6 @@ async def _convert_content_to_chat_message(
     return None
 
 
-def _decode_tool_arguments(arguments: str) -> Any:
-    """Decode tool call arguments."""
-    try:
-        return json.loads(arguments)
-    except json.JSONDecodeError as err:
-        raise HomeAssistantError(f"Unexpected tool argument response: {err}") from err
-
-
 async def _transform_stream(
     stream: AsyncStream[ChatCompletionChunk],
     strip_emojis: bool,
@@ -296,13 +289,6 @@ class LocalAiEntity(Entity):
             entry_type=dr.DeviceEntryType.SERVICE,
         )
 
-        self._embedding_model = (
-            SentenceTransformer("all-MiniLM-L6-v2")
-            if subentry.data.get(CONF_QDRANT_HOST)
-            and subentry.data.get(CONF_QDRANT_COLLECTION)
-            else None
-        )
-
     async def _async_handle_chat_log(
         self,
         chat_log: conversation.ChatLog,
@@ -343,30 +329,57 @@ class LocalAiEntity(Entity):
             max_message_history,
         )
 
-        # Full manual prompting - wipe out the HASS-compiled prompt, allow the user to take FULL CONTROL here
-        # Additional variables for tools and devices are exposed to the jinja prompt
-        if options.get(CONF_MANUAL_PROMPTING, False) and user_input:
-            prompt = format_custom_prompt(
-                self.hass, options.get(CONF_PROMPT), user_input, tools
-            )
-            messages[0] = ChatCompletionSystemMessageParam(
-                role="system", content=prompt
-            )
+        # Retrieval Augmented Generation: Query Weaviate vector DB
+        try:
+            weaviate_opts = options.get(CONF_WEAVIATE_OPTIONS, {})
+            weaviate_server_opts = self.entry.data.get(CONF_WEAVIATE_OPTIONS, {})
+            weaviate_host = weaviate_server_opts.get(CONF_WEAVIATE_HOST)
+            weaviate_class = weaviate_opts.get(CONF_WEAVIATE_CLASS_NAME)
 
-        # Qdrant semantic similarity / RAG
-        if self._embedding_model:
-            tensor = self._embedding_model.encode(user_input.text)
-            tensor_size = tensor.shape[0]
-            qdrant = QdrantClient(options.get(CONF_QDRANT_HOST))
-            result = self._qdrant_client.query_points(
-                collection_name=options.get(CONF_QDRANT_COLLECTION),
-                query=[*tensor[:tensor_size]],
-                score_threshold=options.get(
-                    CONF_QDRANT_THRESHOLD, CONF_QDRANT_DEFAULT_THRESHOLD
-                ),
-                limit=options.get(CONF_QDRANT_MAX_RESULTS, 1),
+            if not weaviate_class:
+                weaviate_class = weaviate_server_opts.get(
+                    CONF_WEAVIATE_CLASS_NAME, CONF_WEAVIATE_DEFAULT_CLASS_NAME
+                )
+
+            if weaviate_host:
+                client = WeaviateClient(
+                    hass=self.hass,
+                    host=weaviate_host,
+                    api_key=weaviate_server_opts.get(CONF_WEAVIATE_API_KEY),
+                    class_name=weaviate_class,
+                )
+                results = await client.near_text(
+                    query=user_input.text,
+                    threshold=weaviate_opts.get(
+                        CONF_WEAVIATE_THRESHOLD, CONF_WEAVIATE_DEFAULT_THRESHOLD
+                    ),
+                    limit=int(
+                        weaviate_opts.get(
+                            CONF_WEAVIATE_MAX_RESULTS, CONF_WEAVIATE_DEFAULT_MAX_RESULTS
+                        )
+                    ),
+                )
+
+                LOGGER.debug(f"Weaviate results: {results}")
+
+                result_content = [
+                    result.get("content").strip()
+                    for result in results
+                    if result.get("content", "").strip()
+                ]
+                if result_content:
+                    messages.append(
+                        ChatCompletionToolMessageParam(
+                            role="tool",
+                            content=f"# Retrieval Augmented Generation\nYou may use the following information to answer the user question, if appropriate. Ignore this if it does not relate to or answer the users query.\n\n{'\n'.join(result_content)}",
+                            tool_call_id="rag_result",
+                        )
+                    )
+
+        except Exception as err:
+            LOGGER.warning(
+                "An unexpected exception occurred while processing RAG: %s", err
             )
-            LOGGER.warning(result)
 
         model_args["messages"] = messages
 

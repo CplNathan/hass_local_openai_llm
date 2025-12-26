@@ -7,6 +7,51 @@
           "server_name": "Server Name",
           "base_url": "Server URL",
           "api_key": "API key"
+        },
+        "data_description": {
+          "api_key": "If required to authenticate with the service"
+        },
+        "sections": {
+          "weaviate_options": {
+            "name": "Weaviate configuration",
+            "description": "Query a Weaviate vector database with user messages and augment the generation with semantically-similar results",
+            "data": {
+              "weaviate_host": "Weaviate server address",
+              "weaviate_api_key": "API key",
+              "weaviate_class_name": "Weaviate object class name"
+            },
+            "data_description": {
+              "weaviate_host": "Including protocol and port",
+              "weaviate_api_key": "Your API key, if authentication is required",
+              "weaviate_class_name": "Default class name to be used for your Agents"
+            }
+          }
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Local OpenAI Server",
+        "data": {
+          "server_name": "Server Name",
+          "base_url": "Server URL",
+          "api_key": "API key"
+        },
+        "data_description": {
+          "api_key": "If required to authenticate with the service"
+        },
+        "sections": {
+          "weaviate_options": {
+            "name": "Weaviate configuration",
+            "data": {
+              "weaviate_host": "Weaviate server address",
+              "weaviate_api_key": "API key",
+              "weaviate_class_name": "Weaviate object class name"
+            },
+            "data_description": {
+              "weaviate_host": "Including protocol and port",
+              "weaviate_api_key": "Your API key, if authentication is required",
+              "weaviate_class_name": "Default class name to be used for your Agents"
+            }
+          }
         }
       }
     },
@@ -15,7 +60,8 @@
       "unknown": "An unknown error occurred"
     },
     "abort": {
-      "already_configured": "Already configured"
+      "already_configured": "Already configured",
+      "reconfigure_successful": "LLM Server has been reconfigured"
     }
   },
   "config_subentries": {
@@ -31,12 +77,27 @@
             "suggested_value": "Suggested value",
             "temperature": "Temperature",
             "max_message_history": "Max message history size (0 for no limit)",
-            "manual_prompting": "Full manual prompting",
             "parallel_tool_calls": "Parallel tool calling"
           },
           "data_description": {
             "model": "The model to use for the conversation agent",
-            "prompt": "Instruct how the LLM should respond. This can be a template."
+            "prompt": "Instruct how the LLM should respond. This can be a template",
+            "parallel_tool_calls": "Allow the model to use multiple tools in a single turn",
+            "temperature": "Lower for more predictable responses, higher for more randomness"
+          },
+          "sections": {
+            "weaviate_options": {
+              "name": "Weaviate configuration",
+              "data": {
+                "weaviate_class_name": "Weaviate object class name",
+                "weaviate_max_results": "Maximum number of results",
+                "weaviate_threshold": "Result score threshold"
+              },
+              "data_description": {
+                "weaviate_class_name": "Leave blank to use the server default",
+                "weaviate_threshold": "Higher for stricter results"
+              }
+            }
           }
         },
         "reconfigure": {
@@ -49,12 +110,27 @@
             "suggested_value": "Suggested value",
             "temperature": "Temperature",
             "max_message_history": "Max message history size (0 for no limit)",
-            "manual_prompting": "Full manual prompting",
             "parallel_tool_calls": "Parallel tool calling"
           },
           "data_description": {
             "model": "The model to use for the conversation agent",
-            "prompt": "Instruct how the LLM should respond. This can be a template."
+            "prompt": "Instruct how the LLM should respond. This can be a template",
+            "parallel_tool_calls": "Allow the model to use multiple tools in a single turn",
+            "temperature": "Lower for more predictable responses, higher for more randomness"
+          },
+          "sections": {
+            "weaviate_options": {
+              "name": "Weaviate configuration",
+              "data": {
+                "weaviate_class_name": "Weaviate object class name",
+                "weaviate_max_results": "Maximum number of results",
+                "weaviate_threshold": "Result score threshold"
+              },
+              "data_description": {
+                "weaviate_class_name": "Leave blank to use the server default",
+                "weaviate_threshold": "Higher for stricter results"
+              }
+            }
           }
         }
       },
@@ -84,28 +160,6 @@
         "cannot_connect": "Could not communicate with the server",
         "unknown": "An unknown error occurred",
         "reconfigure_successful": "AI Task Agent has been reconfigured"
-      }
-    }
-  },
-  "options": {
-    "step": {
-      "reconfigure": {
-        "title": "Reconfigure the conversation agent",
-        "data": {
-          "model": "Model",
-          "prompt": "System Prompt",
-          "llm_hass_api": "Tool Providers",
-          "strip_emojis": "Strip emojis from response",
-          "suggested_value": "Suggested value",
-          "temperature": "Temperature",
-          "max_message_history": "Max message history size (0 for no limit)",
-          "manual_prompting": "Full manual prompting",
-          "parallel_tool_calls": "Parallel tool calling"
-        },
-        "data_description": {
-          "model": "The model to use for the conversation agent",
-          "prompt": "Instruct how the LLM should respond. This can be a template."
-        }
       }
     }
   }
