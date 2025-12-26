@@ -79,8 +79,13 @@ Once configured, user messages to the Agent will be queried against the Weaviate
 
 ### Weaviate Configuration
 
+1. Install Weaviate [locally](https://docs.weaviate.io/weaviate/quickstart/local)
+   1. A pre-made `docker-compose.yml` is provided in the `weaviate` directory of this repository.
+   2. Weaviate Cloud is not supported as there is no free tier available.
+2. 
 
 ### Agent Configuration
+
 
 ### Notes
 

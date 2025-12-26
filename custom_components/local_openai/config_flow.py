@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import re
 from typing import Any
 
@@ -47,10 +46,35 @@ from .const import (
     CONF_WEAVIATE_OPTIONS,
     CONF_WEAVIATE_THRESHOLD,
     DOMAIN,
+    LOGGER,
     RECOMMENDED_CONVERSATION_OPTIONS,
 )
+from .weaviate import WeaviateClient, WeaviateError
 
-_LOGGER = logging.getLogger(__name__)
+
+async def prepare_weaviate_class(hass, weaviate_opts: dict[str, Any]):
+    """Test if we can connect to the weaviate server."""
+    host = weaviate_opts.get(CONF_WEAVIATE_HOST)
+    if not host:
+        # Just pass if we dont have a weaviate host defined
+        return
+
+    weaviate = WeaviateClient(
+        hass=hass,
+        host=host,
+        api_key=weaviate_opts.get(CONF_WEAVIATE_API_KEY),
+    )
+
+    class_name = weaviate_opts.get(
+        CONF_WEAVIATE_CLASS_NAME, CONF_WEAVIATE_DEFAULT_CLASS_NAME
+    )
+
+    # if the class already exists, we're good
+    if await weaviate.does_class_exist(class_name):
+        return
+
+    await weaviate.create_class(class_name)
+    LOGGER.debug("Weaviate connectivity confirmed and class is prepared")
 
 
 class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -70,36 +94,29 @@ class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
         }
 
     @staticmethod
-    def get_schema(options: dict):
-        weaviate_opts = options.get(CONF_WEAVIATE_OPTIONS, {})
-
+    def get_schema():
         return vol.Schema(
             {
                 vol.Required(
                     CONF_SERVER_NAME,
-                    default=options.get(CONF_SERVER_NAME, "Local LLM Server"),
+                    default="Local LLM Server",
                 ): str,
-                vol.Required(
-                    CONF_BASE_URL, default=options.get(CONF_BASE_URL, "")
-                ): str,
-                vol.Optional(CONF_API_KEY, default=options.get(CONF_API_KEY, "")): str,
+                vol.Required(CONF_BASE_URL, default=""): str,
+                vol.Optional(CONF_API_KEY, default=""): str,
                 vol.Optional(CONF_WEAVIATE_OPTIONS): section(
                     schema=vol.Schema(
                         schema={
                             vol.Optional(
                                 CONF_WEAVIATE_HOST,
-                                default=weaviate_opts.get(CONF_WEAVIATE_HOST, ""),
+                                default="",
                             ): str,
                             vol.Optional(
                                 CONF_WEAVIATE_API_KEY,
-                                default=weaviate_opts.get(CONF_WEAVIATE_API_KEY, ""),
+                                default="",
                             ): str,
                             vol.Optional(
                                 CONF_WEAVIATE_CLASS_NAME,
-                                default=weaviate_opts.get(
-                                    CONF_WEAVIATE_CLASS_NAME,
-                                    CONF_WEAVIATE_DEFAULT_CLASS_NAME,
-                                ),
+                                default=CONF_WEAVIATE_DEFAULT_CLASS_NAME,
                             ): str,
                         }
                     ),
@@ -115,7 +132,7 @@ class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
         errors = {}
         if user_input is not None:
             self._async_abort_entries_match(user_input)
-            _LOGGER.debug(
+            LOGGER.debug(
                 f"Initialising OpenAI client with base_url: {user_input[CONF_BASE_URL]}"
             )
 
@@ -126,16 +143,26 @@ class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
                     http_client=get_async_client(self.hass),
                 )
 
-                _LOGGER.debug("Retrieving model list to ensure server is accessible")
+                LOGGER.debug("Retrieving model list to ensure server is accessible")
                 await client.models.list()
+
+                # Test connectivity with Weaviate, and prepare our class if needed
+                await prepare_weaviate_class(
+                    hass=self.hass,
+                    weaviate_opts=user_input.get(CONF_WEAVIATE_OPTIONS, {}),
+                )
+            except WeaviateError as err:
+                LOGGER.exception(f"Unexpected exception: {err}")
+                errors["base"] = "cannot_connect_weaviate"
             except OpenAIError as err:
-                _LOGGER.exception(f"OpenAI Error: {err}")
+                LOGGER.exception(f"OpenAI Error: {err}")
                 errors["base"] = "cannot_connect"
             except Exception as err:
-                _LOGGER.exception(f"Unexpected exception: {err}")
+                LOGGER.exception(f"Unexpected exception: {err}")
                 errors["base"] = "unknown"
             else:
-                _LOGGER.debug("Server connection verified")
+                LOGGER.debug("Server connection verified")
+
                 return self.async_create_entry(
                     title=f"{user_input.get(CONF_SERVER_NAME, 'Local LLM Server')}",
                     data=user_input,
@@ -143,7 +170,7 @@ class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user",
-            data_schema=self.get_schema({}),
+            data_schema=self.get_schema(),
             errors=errors,
         )
 
@@ -151,20 +178,53 @@ class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
         """User flow to create a sensor subentry."""
+        errors = {}
         if user_input is not None:
-            if not user_input.get(CONF_LLM_HASS_API):
-                user_input.pop(CONF_LLM_HASS_API, None)
-            return self.async_update_reload_and_abort(
-                entry=self._get_reconfigure_entry(),
-                title=f"{user_input.get(CONF_SERVER_NAME, 'Local LLM Server')}",
-                data=user_input,
+            self._async_abort_entries_match(user_input)
+            LOGGER.debug(
+                f"Initialising OpenAI client with base_url: {user_input[CONF_BASE_URL]}"
             )
 
+            try:
+                client = AsyncOpenAI(
+                    base_url=user_input.get(CONF_BASE_URL),
+                    api_key=user_input.get(CONF_API_KEY, ""),
+                    http_client=get_async_client(self.hass),
+                )
+
+                LOGGER.debug("Retrieving model list to ensure server is accessible")
+                await client.models.list()
+
+                # Test connectivity with Weaviate, and prepare our class if needed
+                await prepare_weaviate_class(
+                    hass=self.hass,
+                    weaviate_opts=user_input.get(CONF_WEAVIATE_OPTIONS, {}),
+                )
+            except WeaviateError as err:
+                LOGGER.exception(f"Unexpected exception: {err}")
+                errors["base"] = "cannot_connect_weaviate"
+            except OpenAIError as err:
+                LOGGER.exception(f"OpenAI Error: {err}")
+                errors["base"] = "cannot_connect"
+            except Exception as err:
+                LOGGER.exception(f"Unexpected exception: {err}")
+                errors["base"] = "unknown"
+            else:
+                LOGGER.debug("Server connection verified")
+
+                return self.async_update_reload_and_abort(
+                    entry=self._get_reconfigure_entry(),
+                    title=f"{user_input.get(CONF_SERVER_NAME, 'Local LLM Server')}",
+                    data=user_input,
+                )
+
         options = self._get_reconfigure_entry().data.copy()
+        schema = self.add_suggested_values_to_schema(self.get_schema(), options)
 
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=self.get_schema(options),
+            data_schema=schema,
+            errors=errors,
         )
 
 
@@ -190,10 +250,9 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
             for api in llm.async_get_apis(self.hass)
         ]
 
-    async def get_schema(self, options: dict = {}):
+    async def get_schema(self):
         llm_apis = self.get_llm_apis()
         client = self._get_entry().runtime_data
-        weaviate_opts = options.get(CONF_WEAVIATE_OPTIONS, {})
 
         try:
             response = await client.models.list()
@@ -205,43 +264,37 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                 for model in response.data
             ]
         except OpenAIError as err:
-            _LOGGER.exception(f"OpenAI Error retrieving models list: {err}")
+            LOGGER.exception(f"OpenAI Error retrieving models list: {err}")
             downloaded_models = []
         except Exception as err:
-            _LOGGER.exception(f"Unexpected exception retrieving models list: {err}")
+            LOGGER.exception(f"Unexpected exception retrieving models list: {err}")
             downloaded_models = []
 
         schema = {
             vol.Required(
                 CONF_MODEL,
-                default=options.get(CONF_MODEL),
             ): SelectSelector(
                 SelectSelectorConfig(options=downloaded_models, custom_value=True)
             ),
             vol.Optional(
                 CONF_PROMPT,
-                default=options.get(
-                    CONF_PROMPT, RECOMMENDED_CONVERSATION_OPTIONS[CONF_PROMPT]
-                ),
+                default=RECOMMENDED_CONVERSATION_OPTIONS[CONF_PROMPT],
             ): TemplateSelector(),
             vol.Optional(
                 CONF_LLM_HASS_API,
-                default=options.get(
-                    CONF_LLM_HASS_API,
-                    RECOMMENDED_CONVERSATION_OPTIONS[CONF_LLM_HASS_API],
-                ),
+                default=RECOMMENDED_CONVERSATION_OPTIONS[CONF_LLM_HASS_API],
             ): SelectSelector(SelectSelectorConfig(options=llm_apis, multiple=True)),
             vol.Optional(
                 CONF_PARALLEL_TOOL_CALLS,
-                default=options.get(CONF_PARALLEL_TOOL_CALLS, True),
+                default=True,
             ): bool,
             vol.Optional(
                 CONF_STRIP_EMOJIS,
-                default=options.get(CONF_STRIP_EMOJIS, False),
+                default=False,
             ): bool,
             vol.Optional(
                 CONF_TEMPERATURE,
-                default=options.get(CONF_TEMPERATURE, 0.6),
+                default=0.6,
             ): NumberSelector(
                 NumberSelectorConfig(
                     min=0, max=1, step=0.01, mode=NumberSelectorMode.BOX
@@ -249,7 +302,7 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
             ),
             vol.Optional(
                 CONF_MAX_MESSAGE_HISTORY,
-                default=options.get(CONF_MAX_MESSAGE_HISTORY, 0),
+                default=0,
             ): NumberSelector(
                 NumberSelectorConfig(
                     min=0,
@@ -268,17 +321,11 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                         schema={
                             vol.Optional(
                                 CONF_WEAVIATE_CLASS_NAME,
-                                default=weaviate_opts.get(
-                                    CONF_WEAVIATE_CLASS_NAME,
-                                    "",
-                                ),
+                                default="",
                             ): str,
                             vol.Optional(
                                 CONF_WEAVIATE_MAX_RESULTS,
-                                default=weaviate_opts.get(
-                                    CONF_WEAVIATE_MAX_RESULTS,
-                                    CONF_WEAVIATE_DEFAULT_MAX_RESULTS,
-                                ),
+                                default=CONF_WEAVIATE_DEFAULT_MAX_RESULTS,
                             ): NumberSelector(
                                 NumberSelectorConfig(
                                     min=1,
@@ -289,10 +336,7 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                             ),
                             vol.Optional(
                                 CONF_WEAVIATE_THRESHOLD,
-                                default=weaviate_opts.get(
-                                    CONF_WEAVIATE_THRESHOLD,
-                                    CONF_WEAVIATE_DEFAULT_THRESHOLD,
-                                ),
+                                default=CONF_WEAVIATE_DEFAULT_THRESHOLD,
                             ): NumberSelector(
                                 NumberSelectorConfig(
                                     min=0,
@@ -313,31 +357,74 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
         """User flow to create a sensor subentry."""
+        errors = {}
+
         if user_input is not None:
             if not user_input.get(CONF_LLM_HASS_API):
                 user_input.pop(CONF_LLM_HASS_API, None)
             model_name = self.strip_model_pathing(user_input.get(CONF_MODEL, "Local"))
-            return self.async_create_entry(
-                title=f"{model_name} AI Agent", data=user_input
-            )
+
+            try:
+                weaviate_opts = self._get_entry().data.get(CONF_WEAVIATE_OPTIONS, {})
+                weaviate_input_opts = user_input.get(CONF_WEAVIATE_OPTIONS, {})
+                weaviate_opts[CONF_WEAVIATE_CLASS_NAME] = weaviate_input_opts.get(
+                    CONF_WEAVIATE_CLASS_NAME,
+                    weaviate_opts.get(
+                        CONF_WEAVIATE_CLASS_NAME, CONF_WEAVIATE_DEFAULT_CLASS_NAME
+                    ),
+                )
+
+                await prepare_weaviate_class(
+                    hass=self.hass,
+                    weaviate_opts=weaviate_opts,
+                )
+            except WeaviateError as err:
+                LOGGER.exception(f"Unexpected exception: {err}")
+                errors["base"] = "cannot_connect_weaviate"
+            else:
+                return self.async_create_entry(
+                    title=f"{model_name} AI Agent", data=user_input
+                )
 
         return self.async_show_form(
             step_id="user",
             data_schema=await self.get_schema(),
+            errors=errors,
         )
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
         """User flow to create a sensor subentry."""
+        errors = {}
+
         if user_input is not None:
             if not user_input.get(CONF_LLM_HASS_API):
                 user_input.pop(CONF_LLM_HASS_API, None)
-            return self.async_update_and_abort(
-                self._get_entry(),
-                self._get_reconfigure_subentry(),
-                data=user_input,
-            )
+
+            try:
+                weaviate_opts = self._get_entry().data.get(CONF_WEAVIATE_OPTIONS, {})
+                weaviate_input_opts = user_input.get(CONF_WEAVIATE_OPTIONS, {})
+                weaviate_opts[CONF_WEAVIATE_CLASS_NAME] = weaviate_input_opts.get(
+                    CONF_WEAVIATE_CLASS_NAME,
+                    weaviate_opts.get(
+                        CONF_WEAVIATE_CLASS_NAME, CONF_WEAVIATE_DEFAULT_CLASS_NAME
+                    ),
+                )
+
+                await prepare_weaviate_class(
+                    hass=self.hass,
+                    weaviate_opts=weaviate_opts,
+                )
+            except WeaviateError as err:
+                LOGGER.exception(f"Unexpected exception: {err}")
+                errors["base"] = "cannot_connect_weaviate"
+            else:
+                return self.async_update_and_abort(
+                    self._get_entry(),
+                    self._get_reconfigure_subentry(),
+                    data=user_input,
+                )
 
         options = self._get_reconfigure_subentry().data.copy()
 
@@ -348,9 +435,10 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
             api for api in options.get(CONF_LLM_HASS_API, []) if api in llm_apis
         ]
 
+        schema = self.add_suggested_values_to_schema(await self.get_schema(), options)
+
         return self.async_show_form(
-            step_id="reconfigure",
-            data_schema=await self.get_schema(options),
+            step_id="reconfigure", data_schema=schema, errors=errors
         )
 
 
@@ -378,10 +466,10 @@ class AITaskDataFlowHandler(LocalAiSubentryFlowHandler):
                 for model in response.data
             ]
         except OpenAIError as err:
-            _LOGGER.exception(f"OpenAI Error retrieving models list: {err}")
+            LOGGER.exception(f"OpenAI Error retrieving models list: {err}")
             downloaded_models = []
         except Exception as err:
-            _LOGGER.exception(f"Unexpected exception retrieving models list: {err}")
+            LOGGER.exception(f"Unexpected exception retrieving models list: {err}")
             downloaded_models = []
 
         return self.async_show_form(

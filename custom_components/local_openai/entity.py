@@ -13,7 +13,7 @@ import openai
 import voluptuous as vol
 from homeassistant.components import conversation
 from homeassistant.config_entries import ConfigSubentry
-from homeassistant.const import CONF_MODEL, CONF_PROMPT
+from homeassistant.const import CONF_MODEL
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import llm
@@ -346,9 +346,9 @@ class LocalAiEntity(Entity):
                     hass=self.hass,
                     host=weaviate_host,
                     api_key=weaviate_server_opts.get(CONF_WEAVIATE_API_KEY),
-                    class_name=weaviate_class,
                 )
                 results = await client.near_text(
+                    class_name=weaviate_class,
                     query=user_input.text,
                     threshold=weaviate_opts.get(
                         CONF_WEAVIATE_THRESHOLD, CONF_WEAVIATE_DEFAULT_THRESHOLD

@@ -56,8 +56,9 @@
       }
     },
     "error": {
-      "cannot_connect": "Could not communicate with the server",
-      "unknown": "An unknown error occurred"
+      "cannot_connect": "Could not communicate with the LLM server",
+      "unknown": "An unknown error occurred",
+      "cannot_connect_weaviate": "Could not communicate with the Weaviate server"
     },
     "abort": {
       "already_configured": "Already configured",
@@ -139,9 +140,10 @@
       },
       "entry_type": "Conversation agent",
       "abort": {
-        "cannot_connect": "Could not communicate with the server",
+        "cannot_connect": "Could not communicate with the LLM server",
         "unknown": "An unknown error occurred",
-        "reconfigure_successful": "Conversation Agent has been reconfigured"
+        "reconfigure_successful": "Conversation Agent has been reconfigured",
+        "cannot_connect_weaviate": "Could not communicate with the Weaviate server"
       }
     },
     "ai_task_data": {
