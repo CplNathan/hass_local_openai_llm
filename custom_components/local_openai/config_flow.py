@@ -14,7 +14,7 @@ from homeassistant.config_entries import (
     SubentryFlowResult,
 )
 from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API, CONF_MODEL, CONF_PROMPT
-from homeassistant.core import callback
+from homeassistant.core import callback, HomeAssistant
 from homeassistant.data_entry_flow import section
 from homeassistant.helpers import llm
 from homeassistant.helpers.httpx_client import get_async_client
@@ -48,11 +48,12 @@ from .const import (
     DOMAIN,
     LOGGER,
     RECOMMENDED_CONVERSATION_OPTIONS,
+    CONF_WEAVIATE_MAX_RESULTS_MAX,
 )
 from .weaviate import WeaviateClient, WeaviateError
 
 
-async def prepare_weaviate_class(hass, weaviate_opts: dict[str, Any]):
+async def prepare_weaviate_class(hass: HomeAssistant, weaviate_opts: dict[str, Any]):
     """Prepare our object class"""
     host = weaviate_opts.get(CONF_WEAVIATE_HOST)
     if not host:
@@ -325,7 +326,7 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                             ): NumberSelector(
                                 NumberSelectorConfig(
                                     min=1,
-                                    max=5,
+                                    max=CONF_WEAVIATE_MAX_RESULTS_MAX,
                                     step=1,
                                     mode=NumberSelectorMode.SLIDER,
                                 )

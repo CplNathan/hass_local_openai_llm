@@ -61,14 +61,17 @@ After installation, configure the integration through Home Assistant's UI:
 ### Configuration Notes
 
 - The Server URL must be a fully qualified URL pointing to an OpenAI-compatible API.
-  - This typically ends with `/v1` but may differ depending on your server configuration. 
+  - This typically ends with `/v1` but may differ depending on your server configuration.
 - If you have the `Extended OpenAI Conversation` integration installed, this has a dependency of an older version of the OpenAI client library.
   - It is strongly recommended this be uninstalled to ensure that HACS installs the correct OpenAI client library.
 - Assist requires a fairly lengthy context for tooling and entity definitions. 
   - It is strongly recommended to use _at least_ 8k context size and to limit history length to avoid context overflow issues.
   - This is not configurable through OpenAI-compatible APIs, and needs to be configured with the inference server directly.
+- Tool calling must be enabled in your inference engine, eg: 
+  - **vLLM**: https://docs.vllm.ai/en/latest/features/tool_calling/
+  - **llama.cpp**: https://github.com/ggml-org/llama.cpp/blob/master/docs/function-calling.md
 - Parallel tool calling requires support from both your model and inference server.
-  - In some cases, control of this is handled by the server directly, in which case toggling this will not have any result.  
+  - In some cases, control of this is handled by the server directly, in which case toggling this will not have any result.
 
 ## Retrieval Augmented Generation (RAG) with Weaviate
 
@@ -93,6 +96,12 @@ Once configured, user messages to the Agent will be queried against the Weaviate
 ### Notes
 
 - Only the current generations user message is queried in the database, no prior user messages are included
+- Objects are stored as 2 pieces of data: the `query`, and the `content`
+  - The `query` is what is vectorised and the user inputs searched against.
+  - The `content` is the data that is provided to the LLM if the object is matched.
+- Result score threshold is a balancing act with your data:
+  - Too high, and your data may not match closely enough with your inputs.
+  - Too low, and irrelevant results can negatively affect responses, especially on smaller models.
 
 ## Additional
 

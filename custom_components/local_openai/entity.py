@@ -368,7 +368,7 @@ class LocalAiEntity(Entity):
                     messages.append(
                         ChatCompletionToolMessageParam(
                             role="tool",
-                            content=f"# Retrieval Augmented Generation\nYou may use the following information to answer the user question, if appropriate. Ignore this if it does not relate to or answer the users query.\n\n{'\n'.join(result_content)}",
+                            content=f"# Retrieval Augmented Generation\nYou may use the following information to answer the user question, if appropriate.\nIgnore this if it does not relate to or answer the users query.\n\n{'\n'.join(result_content)}",
                             tool_call_id="rag_result",
                         )
                     )
