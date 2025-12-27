@@ -45,9 +45,11 @@ from .const import (
     CONF_WEAVIATE_API_KEY,
     CONF_WEAVIATE_CLASS_NAME,
     CONF_WEAVIATE_DEFAULT_CLASS_NAME,
+    CONF_WEAVIATE_DEFAULT_HYBRID_SEARCH_ALPHA,
     CONF_WEAVIATE_DEFAULT_MAX_RESULTS,
     CONF_WEAVIATE_DEFAULT_THRESHOLD,
     CONF_WEAVIATE_HOST,
+    CONF_WEAVIATE_HYBRID_SEARCH_ALPHA,
     CONF_WEAVIATE_MAX_RESULTS,
     CONF_WEAVIATE_OPTIONS,
     CONF_WEAVIATE_THRESHOLD,
@@ -344,9 +346,14 @@ class LocalAiEntity(Entity):
                     host=weaviate_host,
                     api_key=weaviate_server_opts.get(CONF_WEAVIATE_API_KEY),
                 )
-                results = await client.near_text(
+
+                results = await client.hybrid_search(
                     class_name=weaviate_class,
                     query=user_input.text,
+                    alpha=weaviate_opts.get(
+                        CONF_WEAVIATE_HYBRID_SEARCH_ALPHA,
+                        CONF_WEAVIATE_DEFAULT_HYBRID_SEARCH_ALPHA,
+                    ),
                     threshold=weaviate_opts.get(
                         CONF_WEAVIATE_THRESHOLD, CONF_WEAVIATE_DEFAULT_THRESHOLD
                     ),
@@ -360,9 +367,8 @@ class LocalAiEntity(Entity):
                 LOGGER.debug(f"Weaviate results: {results}")
 
                 result_content = [
-                    result.get("content").strip()
+                    f"Query: {result.get('query').strip()}\nContent: {result.get('content').strip()}"
                     for result in results
-                    if result.get("content", "").strip()
                 ]
                 if result_content:
                     messages.append(

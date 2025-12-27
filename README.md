@@ -82,26 +82,42 @@ Once configured, user messages to the Agent will be queried against the Weaviate
 
 ### Weaviate Configuration
 
-1. Install Weaviate [locally](https://docs.weaviate.io/weaviate/quickstart/local)
+1. **Install Weaviate [locally](https://docs.weaviate.io/weaviate/quickstart/local)**
    1. A pre-made `docker-compose.yml` is provided in the `weaviate` directory of this repository.
    2. Weaviate Cloud is not supported as there is no free tier available.
-2. Reconfigure your LLM Server entity (**not** the Agent entity) in Home Assistant.
+2. **Reconfigure your LLM Server entity (**not** the Agent entity) in Home Assistant.**
    1. Expand the `Weaviate configuration` section and fill in the details server address and API key (`homeassistant` if using the supplied `docker-compose.yml`).
-3. Optional: Reconfigure your AI Agent entities in Home Assistant.
+3. **Optional: Reconfigure your AI Agent entities in Home Assistant.**
    1. This is only needed if you wish to change the default Weaviate values on a per-agent basis:
       1. Object class name: Defaults to `Homeassistant`, can be changed if you want a different data store for the Agent. The integration will handle creating the required object class within Weaviate if it does not already exist. 
       2. Maximum number of results to use: Defaults to `2`.
-      3. Result score threshold: Defaults to `0.7`. Higher requires a closer semantic match, while loser is less strict.
+      3. Result score threshold: Defaults to `0.9`.
+      4. Hybrid search alpha: Defaults to `0.5`. Balances the hybrid result scoring between 0 (fully text-matched) and 1 (fully vectorised) matching. 
+
+### Managing Data
+
+Self-hosted Weaviate does not come with a front-end to manage data at all at this current point in time.
+
+I have included a simple NodeJS-based WebApp server within the `/weaviate` directory of this repository, that can be used to connect to your local Weaviate instance and view, query, and manage the data in your object class.
+There are no additional dependencies required for this other than NodeJS itself, and can be run with a simple `node manage.js` command to spawn an HTTP server on port 9090.
+
+This tool supports the following basic functionality:
+- Connect to your server and list the available object classes
+- View the available entry data in each class
+- Add new entry data to a class
+- Perform vector and hybrid searches against an object class
+
+_This is not a general-purpose Weaviate management tool, rather it is purpose-built specifically for use with this integration and the object classes that it creates._ 
 
 ### Notes
 
-- Only the current generations user message is queried in the database, no prior user messages are included
-- Objects are stored as 2 pieces of data: the `query`, and the `content`
+- Only the current generations user message is queried in the database, no prior user messages are included.
+- Search results are used for the **current** user/assistant turns only (including multiturn tool usages), and do not carry forward to subsequent user/assistant turns.  
+- Objects are stored as 2 pieces of data: the `query`, and the `content`:
   - The `query` is what is vectorised and the user inputs searched against.
-  - The `content` is the data that is provided to the LLM if the object is matched.
-- Result score threshold is a balancing act with your data:
-  - Too high, and your data may not match closely enough with your inputs.
-  - Too low, and irrelevant results can negatively affect responses, especially on smaller models.
+  - The `content` is the main content to be provided to be fed to the LLM, along with its `query` text for context. 
+- Useful for providing contextual information to the LLM for different types of requests, without having all of it in your prompt at all times.
+- Should not be looked at as being a general purpose "memory" for the Agent.
 
 ## Additional
 

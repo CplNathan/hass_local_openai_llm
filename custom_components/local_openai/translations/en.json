@@ -88,10 +88,12 @@
               "data": {
                 "weaviate_class_name": "Weaviate object class name",
                 "weaviate_max_results": "Maximum number of results",
-                "weaviate_threshold": "Result score threshold"
+                "weaviate_threshold": "Result score threshold",
+                "weaviate_hybrid_search_alpha": "Hybrid search alpha"
               },
               "data_description": {
-                "weaviate_threshold": "Higher for stricter results"
+                "weaviate_threshold": "Higher for stricter results",
+                "weaviate_hybrid_search_alpha": "Balance between 0 for pure keyword search, and 1 for pure vector similarity search"
               }
             }
           }
@@ -120,10 +122,12 @@
               "data": {
                 "weaviate_class_name": "Weaviate object class name",
                 "weaviate_max_results": "Maximum number of results",
-                "weaviate_threshold": "Result score threshold"
+                "weaviate_threshold": "Result score threshold",
+                "weaviate_hybrid_search_alpha": "Hybrid search alpha"
               },
               "data_description": {
-                "weaviate_threshold": "Higher for stricter results"
+                "weaviate_threshold": "Higher for stricter results",
+                "weaviate_hybrid_search_alpha": "Balance between 0 for pure keyword search, and 1 for pure vector similarity search"
               }
             }
           }

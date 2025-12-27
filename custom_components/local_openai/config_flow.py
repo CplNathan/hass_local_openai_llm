@@ -14,7 +14,7 @@ from homeassistant.config_entries import (
     SubentryFlowResult,
 )
 from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API, CONF_MODEL, CONF_PROMPT
-from homeassistant.core import callback, HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import section
 from homeassistant.helpers import llm
 from homeassistant.helpers.httpx_client import get_async_client
@@ -39,16 +39,18 @@ from .const import (
     CONF_WEAVIATE_API_KEY,
     CONF_WEAVIATE_CLASS_NAME,
     CONF_WEAVIATE_DEFAULT_CLASS_NAME,
+    CONF_WEAVIATE_DEFAULT_HYBRID_SEARCH_ALPHA,
     CONF_WEAVIATE_DEFAULT_MAX_RESULTS,
     CONF_WEAVIATE_DEFAULT_THRESHOLD,
     CONF_WEAVIATE_HOST,
+    CONF_WEAVIATE_HYBRID_SEARCH_ALPHA,
     CONF_WEAVIATE_MAX_RESULTS,
+    CONF_WEAVIATE_MAX_RESULTS_MAX,
     CONF_WEAVIATE_OPTIONS,
     CONF_WEAVIATE_THRESHOLD,
     DOMAIN,
     LOGGER,
     RECOMMENDED_CONVERSATION_OPTIONS,
-    CONF_WEAVIATE_MAX_RESULTS_MAX,
 )
 from .weaviate import WeaviateClient, WeaviateError
 
@@ -249,7 +251,8 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
 
     async def get_schema(self):
         llm_apis = self.get_llm_apis()
-        client = self._get_entry().runtime_data
+        entry = self._get_entry()
+        client = entry.runtime_data
 
         try:
             response = await client.models.list()
@@ -309,7 +312,6 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                 )
             ),
         }
-        entry = self._get_entry()
         if entry.data.get(CONF_WEAVIATE_OPTIONS, {}).get(CONF_WEAVIATE_HOST):
             schema = {
                 **schema,
@@ -334,6 +336,17 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                             vol.Optional(
                                 CONF_WEAVIATE_THRESHOLD,
                                 default=CONF_WEAVIATE_DEFAULT_THRESHOLD,
+                            ): NumberSelector(
+                                NumberSelectorConfig(
+                                    min=0,
+                                    max=1,
+                                    step=0.01,
+                                    mode=NumberSelectorMode.SLIDER,
+                                )
+                            ),
+                            vol.Optional(
+                                CONF_WEAVIATE_HYBRID_SEARCH_ALPHA,
+                                default=CONF_WEAVIATE_DEFAULT_HYBRID_SEARCH_ALPHA,
                             ): NumberSelector(
                                 NumberSelectorConfig(
                                     min=0,

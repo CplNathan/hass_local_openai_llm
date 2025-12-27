@@ -66,6 +66,56 @@ class WeaviateClient:
             LOGGER.warning("Error communicating with Weaviate API: %s", err)
             raise WeaviateError("Unable to query Weaviate") from err
 
+    async def hybrid_search(
+        self, class_name: str, query: str, alpha: float, threshold: float, limit: int
+    ):
+        """Query Weaviate Hybrid search."""
+        class_name = self.prepare_class_name(class_name)
+        query_obj = {
+            "query": f"""
+            {{
+              Get {{
+                {class_name}(
+                  hybrid: {{
+                    query: "{query}",
+                    properties: ["query"],
+                    alpha: {alpha}
+                  }},
+                  limit: {limit},
+                ) {{
+                  query
+                  content
+                  _additional {{
+                    score
+                  }}
+                }}
+              }}
+            }}
+            """
+        }
+        try:
+            headers = {
+                "Content-Type": "application/json",
+            }
+
+            if self._api_key:
+                headers["Authorization"] = f"Bearer {self._api_key}"
+
+            async with self._aiohttp.post(
+                f"{self._host}/v1/graphql", json=query_obj, headers=headers
+            ) as resp:
+                resp.raise_for_status()
+                result = await resp.json()
+                results = result.get("data", {}).get("Get", {}).get(class_name, [])
+                return [
+                    res
+                    for res in results
+                    if float(res.get("_additional", {}).get("score", 0)) >= threshold
+                ]
+        except aiohttp.ClientError as err:
+            LOGGER.warning("Error communicating with Weaviate API: %s", err)
+            raise WeaviateError("Unable to query Weaviate") from err
+
     async def create_class(self, class_name: str):
         """Create our object class in Weaviate."""
         class_name = self.prepare_class_name(class_name)
@@ -107,6 +157,7 @@ class WeaviateClient:
                 f"{self._host}/v1/schema", json=query_obj, headers=headers
             ) as resp:
                 resp.raise_for_status()
+                await self.seed_sample_data(class_name)
                 return
         except aiohttp.ClientError as err:
             LOGGER.warning(
@@ -137,3 +188,47 @@ class WeaviateClient:
         except aiohttp.ClientError as err:
             LOGGER.warning("Error communicating with Weaviate API: %s", err)
             raise WeaviateError("Unable to lookup object class in Weaviate") from err
+
+    async def add_object(self, class_name: str, query: str, content: str):
+        """Add an object to Weaviate."""
+        class_name = self.prepare_class_name(class_name)
+
+        query_obj = {
+            "class": class_name,
+            "properties": {
+                "query": query,
+                "content": content,
+            },
+        }
+
+        try:
+            headers = {
+                "Content-Type": "application/json",
+            }
+
+            if self._api_key:
+                headers["Authorization"] = f"Bearer {self._api_key}"
+
+            async with self._aiohttp.post(
+                f"{self._host}/v1/objects", json=query_obj, headers=headers
+            ) as resp:
+                resp.raise_for_status()
+
+                LOGGER.info(f"Added object of class '{class_name}' into Weaviate")
+                return
+        except aiohttp.ClientError as err:
+            LOGGER.warning(
+                "Error communicating with Weaviate API: %s, request: %s", err, query_obj
+            )
+            raise WeaviateError("Unable to insert new object into Weaviate") from err
+
+    async def seed_sample_data(self, class_name: str):
+        """Seed some sample objects into our database."""
+        data = []  # TODO
+
+        for datum in data:
+            await self.add_object(
+                class_name=class_name,
+                query=datum[0],
+                content=datum[1],
+            )
