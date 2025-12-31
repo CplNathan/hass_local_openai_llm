@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import voluptuous as vol
+from homeassistant.components.conversation import DOMAIN as CONVERSATION_DOMAIN
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_KEY, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
+from homeassistant.helpers import service
 from homeassistant.helpers.httpx_client import get_async_client
+from homeassistant.helpers.typing import ConfigType
 from openai import AsyncOpenAI, AuthenticationError, OpenAIError
 
-from .const import CONF_BASE_URL, LOGGER
+from .const import CONF_BASE_URL, DOMAIN, LOGGER
 
 PLATFORMS = [Platform.AI_TASK, Platform.CONVERSATION]
 
@@ -55,3 +59,27 @@ async def _async_update_listener(
 async def async_unload_entry(hass: HomeAssistant, entry: LocalAiConfigEntry) -> bool:
     """Unload Local OpenAI LLM."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Set up is called when Home Assistant is loading our component."""
+    service.async_register_platform_entity_service(
+        hass=hass,
+        service_domain=DOMAIN,
+        service_name="add_to_weaviate",
+        entity_domain=CONVERSATION_DOMAIN,
+        schema={
+            vol.Required("query"): str,
+            vol.Required("content"): str,
+        },
+        func=add_to_weaviate,
+    )
+    return True
+
+
+async def add_to_weaviate(entity, service_call):
+    """Service action to add content to Weaviate."""
+    await entity.add_to_weaviate(
+        query=service_call.data["query"],
+        content=service_call.data["content"],
+    )

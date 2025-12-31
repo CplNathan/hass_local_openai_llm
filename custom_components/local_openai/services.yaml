@@ -1,0 +1,27 @@
+add_to_weaviate:
+  target:
+    entity:
+      integration: local_openai
+      domain: conversation
+  fields:
+    query:
+      name: Query
+      description: >
+        The text content that will be matched against the users input term.
+        Will be provided to the LLM as contextual information.
+      required: true
+      example: "Where is the cat (casey) food kept stored?"
+      default: ""
+      selector:
+        text:
+    content:
+      name: Content
+      description: >
+        Context that will be provided to the LLM if query is matched.
+        This content will not be matched against the users input term.
+      required: true
+      example: "The cat food is kept in the pantry - second shelf from the bottom"
+      default: ""
+      selector:
+        text:
+          multiline: true

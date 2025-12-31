@@ -89,10 +89,11 @@ app.post("/search", async (req, res) => {
               hybrid: {
                 query: "${req.body.query}"
                 properties: ["query","content"]
-                alpha: 0.5
+                alpha: ${req.body.alpha}
               }
               limit: 5
             ) {
+              query
               content
               _additional { score }
             }
@@ -109,7 +110,6 @@ app.post("/search", async (req, res) => {
             }
           }
         }`;
-
   try {
     const data = await weaviateFetch(req.body.base, "/v1/graphql", req.body.apiKey, {
       method: "POST",
@@ -278,10 +278,18 @@ button:disabled { opacity: .5 }
 
 .small { font-size: 12px; color: var(--muted) }
 
-.results div {
+.results > div {
   background: #0f1328;
   padding: 8px;
   border-radius: 8px;
+}
+
+.right-align {
+  text-align: right;
+}
+
+.bold {
+	font-weight: bold;
 }
 </style>
 </head>
@@ -300,11 +308,16 @@ button:disabled { opacity: .5 }
     <div class="panel col">
       <h2>Search</h2>
       <div class="row">
-        <select id="searchType">
-          <option value="near">NearText</option>
-          <option value="hybrid">Hybrid</option>
-        </select>
-        <input id="searchInput" placeholder="Search…" style="flex:1">
+      	<label class="col" style="flex:1">
+      		Query
+        	<input id="searchInput" placeholder="Search…">
+        </label>
+		<label class="col">
+      		Alpha
+        	<input id="hybridAlpha" type="number" value="0.5">
+        </label>
+      </div>
+      <div class="row right-align">
         <button onclick="runSearch()">Go</button>
       </div>
       <div id="searchResults" class="results col"></div>
@@ -349,6 +362,8 @@ button:disabled { opacity: .5 }
 const baseInput = document.getElementById('baseUrl');
 const objectClasses = document.getElementById("objectClass");
 const apiKeyInput = document.getElementById("apiKey");
+//const searchType = document.getElementById("searchType");
+const hybridAlpha = document.getElementById('hybridAlpha');
 
 baseInput.value = "${defaultBaseUrl}" || localStorage.getItem('weaviateBase') || '';
 apiKeyInput.value = localStorage.getItem('weaviateApiKey') || '';
@@ -468,7 +483,9 @@ async function runSearch() {
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({
       base: base(),
-      type: searchType.value,
+//      type: searchType.value,
+	  type: "hybrid",
+	  alpha: hybridAlpha.value,
       query: searchInput.value,
       class: objectClasses.value,
       apiKey: apiKeyInput.value
@@ -485,10 +502,26 @@ async function runSearch() {
   out.innerHTML = '';
 
   data.forEach(i => {
-	const d = document.createElement('div');
+	const result = document.createElement('div');
+	result.className = 'col';
+	result.style.gap = 'none';
+
+	const queryRow = document.createElement('div');
+	const contentRow = document.createElement('div');
+	const scoreRow = document.createElement('div');
+
 	const score = i._additional.score ?? i._additional.certainty;
-	d.textContent = \`\${i.content} (\${Number(score ?? 0).toFixed(2)})\`;
-	out.appendChild(d);
+
+	queryRow.textContent = \`\${i.query}\`;
+	contentRow.textContent = \`\${i.content}\`;
+	scoreRow.textContent = \`Score: \${score}\`;
+
+	queryRow.className = 'bold';
+
+	for (let ele of [queryRow,  contentRow, scoreRow])
+		result.appendChild(ele)
+
+	out.appendChild(result);
   });
 }
 

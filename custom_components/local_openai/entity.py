@@ -453,3 +453,29 @@ class LocalAiEntity(Entity):
             ]
 
         return messages
+
+    async def add_to_weaviate(self, query: str, content: str):
+        options = self.subentry.data
+        weaviate_opts = options.get(CONF_WEAVIATE_OPTIONS, {})
+        weaviate_server_opts = self.entry.data.get(CONF_WEAVIATE_OPTIONS, {})
+        weaviate_host = weaviate_server_opts.get(CONF_WEAVIATE_HOST)
+        weaviate_class = weaviate_opts.get(
+            CONF_WEAVIATE_CLASS_NAME, CONF_WEAVIATE_DEFAULT_CLASS_NAME
+        )
+
+        if not weaviate_host:
+            raise RuntimeError("Weaviate is not configured for this Agent")
+
+        client = WeaviateClient(
+            hass=self.hass,
+            host=weaviate_host,
+            api_key=weaviate_server_opts.get(CONF_WEAVIATE_API_KEY),
+        )
+
+        await client.add_object(
+            class_name=weaviate_class,
+            query=query,
+            content=content,
+        )
+
+        LOGGER.info(f"Object added to Weaviate class: {weaviate_class}")

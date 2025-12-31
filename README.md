@@ -104,10 +104,10 @@ I have included a simple NodeJS-based WebApp server within the `/weaviate` direc
 This is also setup into the supplied `docker-compose.yml` and exposed on port 9090 by default.
 
 This tool supports the following basic functionality:
-- Connect to your server and list the available object classes
-- View the available entry data in each class
-- Add new entry data to a class
-- Perform vector and hybrid searches against an object class
+- Connect to your server and list the available object classes.
+- View the available entry data in each class.
+- Add new entry data to a class.
+- Perform vector and hybrid searches against an object class.
 
 _This is not a general-purpose Weaviate management tool, rather it is purpose-built specifically for use with this integration and the object classes that it creates._ 
 
@@ -120,13 +120,14 @@ _This is not a general-purpose Weaviate management tool, rather it is purpose-bu
   - The `content` is the main content to be provided to be fed to the LLM, along with its `query` text for context. 
 - Useful for providing contextual information to the LLM for different types of requests, without having all of it in your prompt at all times.
 - I have performed basic testing of this with a variety of models across a few inference providers:
-  - Qwen 3-VL 8B locally on llama.cpp
-  - Minimax m2.1 on OpenRouter
-  - Ministral 8B 2512 on OpenRouter
-  - GPT-5 on OpenRouter
-  - Gemma 3 27B on Scaleway
-  - Llama 3.1 8B on Scaleway
-  - GPT-OSS-120B on Scaleway
+  - Qwen 3-VL 8B locally on llama.cpp.
+  - Minimax m2.1 on OpenRouter.
+  - Ministral 8B 2512 on OpenRouter.
+  - GPT-5 on OpenRouter.
+  - Gemma 3 27B on Scaleway.
+  - Llama 3.1 8B on Scaleway.
+  - GPT-OSS-120B on Scaleway.
+- A service action, `local_openai.add_to_weaviate`, can be used from within Home Assistant to add content to the database. 
 
 ## Web Search & Additional Tools
 

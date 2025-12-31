@@ -189,7 +189,7 @@ class WeaviateClient:
             LOGGER.warning("Error communicating with Weaviate API: %s", err)
             raise WeaviateError("Unable to lookup object class in Weaviate") from err
 
-    async def add_object(self, class_name: str, query: str, content: str):
+    async def add_object(self, class_name: str, query: str, content: str | None):
         """Add an object to Weaviate."""
         class_name = self.prepare_class_name(class_name)
 
