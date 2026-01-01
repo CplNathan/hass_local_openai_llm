@@ -71,15 +71,17 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         schema={
             vol.Required("query"): str,
             vol.Required("content"): str,
+            vol.Optional("identifier"): str,
         },
-        func=add_to_weaviate,
+        func=upsert_data_in_weaviate,
     )
     return True
 
 
-async def add_to_weaviate(entity, service_call):
+async def upsert_data_in_weaviate(entity, service_call):
     """Service action to add content to Weaviate."""
-    await entity.add_to_weaviate(
-        query=service_call.data["query"],
-        content=service_call.data["content"],
+    await entity.upsert_data_in_weaviate(
+        query=service_call.data.get("query"),
+        content=service_call.data.get("content"),
+        identifier=service_call.data.get("identifier"),
     )

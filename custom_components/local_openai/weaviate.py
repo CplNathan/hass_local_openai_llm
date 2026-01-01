@@ -23,6 +23,17 @@ class WeaviateClient:
         """Prepare our class name for use with Weaviate."""
         return class_name.lower().capitalize().replace(" ", "")
 
+    def _api_headers(self) -> dict:
+        """Prepare headers for API calls."""
+        headers = {
+            "Content-Type": "application/json",
+        }
+
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
+
+        return headers
+
     async def near_text(
         self, class_name: str, query: str, threshold: float, limit: int
     ):
@@ -49,15 +60,8 @@ class WeaviateClient:
             """
         }
         try:
-            headers = {
-                "Content-Type": "application/json",
-            }
-
-            if self._api_key:
-                headers["Authorization"] = f"Bearer {self._api_key}"
-
             async with self._aiohttp.post(
-                f"{self._host}/v1/graphql", json=query_obj, headers=headers
+                f"{self._host}/v1/graphql", json=query_obj, headers=self._api_headers()
             ) as resp:
                 resp.raise_for_status()
                 result = await resp.json()
@@ -94,15 +98,8 @@ class WeaviateClient:
             """
         }
         try:
-            headers = {
-                "Content-Type": "application/json",
-            }
-
-            if self._api_key:
-                headers["Authorization"] = f"Bearer {self._api_key}"
-
             async with self._aiohttp.post(
-                f"{self._host}/v1/graphql", json=query_obj, headers=headers
+                f"{self._host}/v1/graphql", json=query_obj, headers=self._api_headers()
             ) as resp:
                 resp.raise_for_status()
                 result = await resp.json()
@@ -146,15 +143,8 @@ class WeaviateClient:
         }
 
         try:
-            headers = {
-                "Content-Type": "application/json",
-            }
-
-            if self._api_key:
-                headers["Authorization"] = f"Bearer {self._api_key}"
-
             async with self._aiohttp.post(
-                f"{self._host}/v1/schema", json=query_obj, headers=headers
+                f"{self._host}/v1/schema", json=query_obj, headers=self._api_headers()
             ) as resp:
                 resp.raise_for_status()
                 await self.seed_sample_data(class_name)
@@ -170,12 +160,8 @@ class WeaviateClient:
         class_name = self.prepare_class_name(class_name)
 
         try:
-            headers = {}
-            if self._api_key:
-                headers["Authorization"] = f"Bearer {self._api_key}"
-
             async with self._aiohttp.get(
-                f"{self._host}/v1/schema/{class_name}", headers=headers
+                f"{self._host}/v1/schema/{class_name}", headers=self._api_headers()
             ) as resp:
                 if resp.status == 404:
                     return False
@@ -189,7 +175,30 @@ class WeaviateClient:
             LOGGER.warning("Error communicating with Weaviate API: %s", err)
             raise WeaviateError("Unable to lookup object class in Weaviate") from err
 
-    async def add_object(self, class_name: str, query: str, content: str | None):
+    async def does_object_exist(self, class_name: str, object_uuid: str) -> bool:
+        """Check if an object exists in Weaviate."""
+        class_name = self.prepare_class_name(class_name)
+
+        try:
+            async with self._aiohttp.get(
+                f"{self._host}/v1/objects/{class_name}/{object_uuid}",
+                headers=self._api_headers(),
+            ) as resp:
+                if resp.status == 404:
+                    return False
+
+                resp.raise_for_status()
+                return True
+        except aiohttp.ClientResponseError as err:
+            LOGGER.warning("Error communicating with Weaviate API: %s", err)
+            raise WeaviateError("Unable to lookup object in Weaviate") from err
+        except aiohttp.ClientError as err:
+            LOGGER.warning("Error communicating with Weaviate API: %s", err)
+            raise WeaviateError("Unable to lookup object in Weaviate") from err
+
+    async def add_object(
+        self, class_name: str, query: str, content: str | None, object_uuid: str | None
+    ) -> object:
         """Add an object to Weaviate."""
         class_name = self.prepare_class_name(class_name)
 
@@ -201,16 +210,12 @@ class WeaviateClient:
             },
         }
 
+        if object_uuid:
+            query_obj["id"] = object_uuid
+
         try:
-            headers = {
-                "Content-Type": "application/json",
-            }
-
-            if self._api_key:
-                headers["Authorization"] = f"Bearer {self._api_key}"
-
             async with self._aiohttp.post(
-                f"{self._host}/v1/objects", json=query_obj, headers=headers
+                f"{self._host}/v1/objects", json=query_obj, headers=self._api_headers()
             ) as resp:
                 resp.raise_for_status()
 
@@ -222,6 +227,39 @@ class WeaviateClient:
             )
             raise WeaviateError("Unable to insert new object into Weaviate") from err
 
+    async def replace_object(
+        self, class_name: str, query: str, content: str | None, object_uuid: str
+    ) -> object:
+        """Replace an object in Weaviate."""
+        class_name = self.prepare_class_name(class_name)
+
+        query_obj = {
+            "id": object_uuid,
+            "class": class_name,
+            "properties": {
+                "query": query,
+                "content": content,
+            },
+        }
+
+        try:
+            async with self._aiohttp.put(
+                f"{self._host}/v1/objects/{class_name}/{object_uuid}",
+                json=query_obj,
+                headers=self._api_headers(),
+            ) as resp:
+                resp.raise_for_status()
+
+                LOGGER.info(
+                    f"Updated object '{object_uuid}' of class '{class_name}' in Weaviate"
+                )
+                return
+        except aiohttp.ClientError as err:
+            LOGGER.warning(
+                "Error communicating with Weaviate API: %s, request: %s", err, query_obj
+            )
+            raise WeaviateError("Unable to update object in Weaviate") from err
+
     async def seed_sample_data(self, class_name: str):
         """Seed some sample objects into our database."""
         data = []  # TODO
@@ -231,4 +269,5 @@ class WeaviateClient:
                 class_name=class_name,
                 query=datum[0],
                 content=datum[1],
+                object_uuid=None,
             )

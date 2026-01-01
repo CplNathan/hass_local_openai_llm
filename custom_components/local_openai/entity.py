@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import uuid
 from collections.abc import AsyncGenerator, Callable
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -195,6 +196,10 @@ async def _convert_content_to_chat_message(
         return param
     LOGGER.warning("Could not convert message to Completions API: %s", content)
     return None
+
+
+def _make_uuid(identifier: str) -> str:
+    return str(uuid.uuid5(namespace=uuid.NAMESPACE_OID, name=identifier))
 
 
 async def _transform_stream(
@@ -454,7 +459,10 @@ class LocalAiEntity(Entity):
 
         return messages
 
-    async def add_to_weaviate(self, query: str, content: str):
+    async def upsert_data_in_weaviate(
+        self, query: str, content: str, identifier: str | None
+    ):
+        """Add or update a record in Weaviate"""
         options = self.subentry.data
         weaviate_opts = options.get(CONF_WEAVIATE_OPTIONS, {})
         weaviate_server_opts = self.entry.data.get(CONF_WEAVIATE_OPTIONS, {})
@@ -472,10 +480,31 @@ class LocalAiEntity(Entity):
             api_key=weaviate_server_opts.get(CONF_WEAVIATE_API_KEY),
         )
 
+        # If we have been provided an identifier, generate a UUID and check if it exists
+        object_uuid = _make_uuid(identifier) if identifier else None
+        if object_uuid:
+            object_exists = await client.does_object_exist(
+                class_name=weaviate_class, object_uuid=object_uuid
+            )
+
+            if object_exists:
+                # Object exists, perform replace the existing object with the new one
+                await client.replace_object(
+                    class_name=weaviate_class,
+                    query=query,
+                    content=content,
+                    object_uuid=object_uuid,
+                )
+
+                LOGGER.info(f"Object updated in Weaviate: {object_uuid}")
+                return
+
+        # Object does not exist, create new object
         await client.add_object(
             class_name=weaviate_class,
             query=query,
             content=content,
+            object_uuid=object_uuid,
         )
 
         LOGGER.info(f"Object added to Weaviate class: {weaviate_class}")
