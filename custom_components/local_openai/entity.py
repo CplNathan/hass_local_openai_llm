@@ -345,7 +345,7 @@ class LocalAiEntity(Entity):
                 CONF_WEAVIATE_CLASS_NAME, CONF_WEAVIATE_DEFAULT_CLASS_NAME
             )
 
-            if weaviate_host and user_input.text:
+            if weaviate_host and user_input and user_input.text:
                 client = WeaviateClient(
                     hass=self.hass,
                     host=weaviate_host,
