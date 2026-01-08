@@ -8,6 +8,7 @@ import json
 import uuid
 from collections.abc import AsyncGenerator, Callable
 from typing import TYPE_CHECKING, Any, Literal
+from datetime import datetime
 
 import demoji
 import openai
@@ -212,7 +213,8 @@ async def _transform_stream(
     in_think = False
     seen_visible = False
     loop = asyncio.get_running_loop()
-    pending_tool_calls: list[dict] = []
+    pending_tool_calls = {}
+    tool_call_id = None
 
     async for event in stream:
         chunk: conversation.AssistantContentDeltaDict = {}
@@ -222,36 +224,41 @@ async def _transform_stream(
 
         choice = event.choices[0]
         delta = choice.delta
+        LOGGER.debug(event)
 
         if new_msg:
             chunk["role"] = delta.role
             new_msg = False
 
+        if (tool_calls := delta.tool_calls) is not None and tool_calls:
+            # I've never seen this contain more than a single tool call, but let's iterate over it just in case
+            for tool_call in tool_calls:
+                # llama.cpp - only the initial tool call chunk has an ID, subsequent argument chunks do not
+                # Ollama - parallel tool calls all share the same .index value (0)
+                tool_call_id = tool_call.id if tool_call.id else tool_call_id
+
+                if tool_call_id not in pending_tool_calls:
+                    pending_tool_calls[tool_call_id] = {
+                        "name": tool_call.function.name,
+                        "args": tool_call.function.arguments or "",
+                    }
+                else:
+                    pending_tool_calls[tool_call_id]["args"] += tool_call.function.arguments or ""
+
         if choice.finish_reason and pending_tool_calls:
             chunk["tool_calls"] = [
                 llm.ToolInput(
+                    id=key,
                     tool_name=tool_call["name"],
                     tool_args=json.loads(tool_call["args"])
                     if tool_call["args"]
                     else {},
                 )
-                for tool_call in pending_tool_calls
+                for key,tool_call in pending_tool_calls.items()
             ]
-            pending_tool_calls = []
 
-        if (tool_calls := delta.tool_calls) is not None and tool_calls:
-            tool_call = tool_calls[0]
-            if len(pending_tool_calls) < tool_call.index + 1:
-                pending_tool_calls.append(
-                    {
-                        "name": tool_call.function.name,
-                        "args": tool_call.function.arguments or "",
-                    }
-                )
-            else:
-                pending_tool_calls[tool_call.index]["args"] += (
-                    tool_call.function.arguments
-                )
+            LOGGER.debug(f"Calling tools: {pending_tool_calls}")
+            pending_tool_calls = {}
 
         if (content := delta.content) is not None:
             if strip_emojis:
@@ -336,16 +343,26 @@ class LocalAiEntity(Entity):
             max_message_history,
         )
 
-        # Retrieval Augmented Generation: Query Weaviate vector DB
-        try:
-            weaviate_opts = options.get(CONF_WEAVIATE_OPTIONS, {})
-            weaviate_server_opts = self.entry.data.get(CONF_WEAVIATE_OPTIONS, {})
-            weaviate_host = weaviate_server_opts.get(CONF_WEAVIATE_HOST)
-            weaviate_class = weaviate_opts.get(
-                CONF_WEAVIATE_CLASS_NAME, CONF_WEAVIATE_DEFAULT_CLASS_NAME
-            )
+        # Home Assistant no longer injects the current date/time into the system prompt, for performance reasons (negatively impacts caching)
+        # It's still useful context to have however, and we can inject this at the end of the message chain along with any RAG content queried
+        dt = datetime.now()
+        date_str = dt.strftime("%d %B, %Y")
+        time_str = dt.strftime("%-I:%M %p")
 
-            if weaviate_host and user_input and user_input.text:
+        inject_content = [
+            f"The current date and time is: `{date_str}` at `{time_str}`.",
+        ]
+
+        # Retrieval Augmented Generation: Query Weaviate vector DB
+        weaviate_opts = options.get(CONF_WEAVIATE_OPTIONS, {})
+        weaviate_server_opts = self.entry.data.get(CONF_WEAVIATE_OPTIONS, {})
+        weaviate_host = weaviate_server_opts.get(CONF_WEAVIATE_HOST)
+        weaviate_class = weaviate_opts.get(
+            CONF_WEAVIATE_CLASS_NAME, CONF_WEAVIATE_DEFAULT_CLASS_NAME
+        )
+
+        if weaviate_host and user_input and user_input.text:
+            try:
                 client = WeaviateClient(
                     hass=self.hass,
                     host=weaviate_host,
@@ -376,16 +393,23 @@ class LocalAiEntity(Entity):
                     for result in results
                 ]
                 if result_content:
-                    messages.append(
-                        ChatCompletionUserMessageParam(
-                            role="user",
-                            content=f"# Retrieval Augmented Generation\nYou may use the following information to answer the user question, if appropriate.\nIgnore this if it does not relate to or answer the users query.\n\n{'\n'.join(result_content)}",
-                        )
+                    inject_content.append(
+                        f"# Retrieval Augmented Generation\nYou may use the following information to answer the user question, if appropriate.\nIgnore this if it does not relate to or answer the users query.\n\n{'\n'.join(result_content)}"
                     )
+            except Exception as err:
+                LOGGER.warning(
+                    "An unexpected exception occurred while processing RAG: %s", err
+                )
+                LOGGER.exception(err)
 
-        except Exception as err:
-            LOGGER.warning(
-                "An unexpected exception occurred while processing RAG: %s", err
+        # Inject any pending content into the message list, before the current user message
+        if inject_content:
+            messages.insert(
+                -1,
+                ChatCompletionUserMessageParam(
+                    role="user",
+                    content="\n\n".join(inject_content),
+                ),
             )
 
         model_args["messages"] = messages
@@ -408,7 +432,7 @@ class LocalAiEntity(Entity):
                     **model_args, stream=True
                 )
             except openai.OpenAIError as err:
-                LOGGER.error("Error requesting response from API: %s", err)
+                LOGGER.exception(err)
                 raise HomeAssistantError("Error talking to API") from err
 
             try:
@@ -425,7 +449,8 @@ class LocalAiEntity(Entity):
                     ]
                 )
             except Exception as err:
-                LOGGER.error("Error handling API response: %s", err)
+                LOGGER.exception(err)
+                raise HomeAssistantError("Error handling API response") from err
 
             if not chat_log.unresponded_tool_results:
                 break
