@@ -99,7 +99,12 @@ def _adjust_schema(schema: dict[str, Any]) -> None:
             _adjust_schema(prop_info)
             if prop not in schema["required"]:
                 if "type" in prop_info:
-                    prop_info["type"] = [prop_info["type"], "null"]
+                    prop_type = prop_info["type"]
+                    # Only wrap if not already nullable
+                    if prop_type != "null" and not (
+                        isinstance(prop_type, list) and "null" in prop_type
+                    ):
+                        prop_info["type"] = [prop_type, "null"]
                 schema["required"].append(prop)
 
     elif schema["type"] == "array":
