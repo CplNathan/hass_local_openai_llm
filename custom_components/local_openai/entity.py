@@ -64,31 +64,12 @@ from .weaviate import WeaviateClient
 MAX_TOOL_ITERATIONS = 10
 
 
-def _flatten_schema_constructs(schema: dict[str, Any]) -> None:
-    """Flatten allOf, anyOf, oneOf constructs by merging into parent schema.
-
-    Some APIs don't support these constructs properly (eg: llama).
-    """
+def _remove_unsupported_keys_from_tool_schema(schema: dict[str, Any]) -> None:
+    """Remove keys not supported in the tool schema"""
     for key in ("allOf", "anyOf", "oneOf"):
         if key in schema:
-            for sub_schema in schema[key]:
-                _flatten_schema_constructs(sub_schema)
-                if "type" not in sub_schema:
-                    for sub_key, sub_value in sub_schema.items():
-                        if sub_key == "required" and sub_key in schema:
-                            schema[sub_key] = list(
-                                set(schema[sub_key]) | set(sub_value)
-                            )
-                        elif sub_key not in schema:
-                            schema[sub_key] = sub_value
             del schema[key]
 
-    # Recursively process nested objects and arrays
-    if schema.get("type") == "object" and "properties" in schema:
-        for prop_info in schema["properties"].values():
-            _flatten_schema_constructs(prop_info)
-    elif schema.get("type") == "array" and "items" in schema:
-        _flatten_schema_constructs(schema["items"])
 
 
 def _adjust_schema(schema: dict[str, Any]) -> None:
@@ -117,7 +98,7 @@ def _adjust_schema(schema: dict[str, Any]) -> None:
 def _format_structured_output(
     name: str, schema: vol.Schema, llm_api: llm.APIInstance | None
 ) -> JSONSchema:
-    """Format the schema to be compatible with OpenRouter API."""
+    """Format the schema to be compatible with OpenAI API."""
     result: JSONSchema = {
         "name": name,
         "strict": True,
@@ -129,7 +110,6 @@ def _format_structured_output(
         ),
     )
 
-    _flatten_schema_constructs(result_schema)
     _adjust_schema(result_schema)
 
     result["schema"] = result_schema
@@ -142,7 +122,8 @@ def _format_tool(
 ) -> ChatCompletionFunctionToolParam:
     """Format tool specification."""
     parameters = convert(tool.parameters, custom_serializer=custom_serializer)
-    _flatten_schema_constructs(parameters)
+    _remove_unsupported_keys_from_tool_schema(parameters)
+
     tool_spec = FunctionDefinition(
         name=tool.name,
         parameters=parameters,
@@ -273,7 +254,9 @@ async def _transform_stream(
                         "args": tool_call.function.arguments or "",
                     }
                 else:
-                    pending_tool_calls[tool_call_id]["args"] += tool_call.function.arguments or ""
+                    pending_tool_calls[tool_call_id]["args"] += (
+                        tool_call.function.arguments or ""
+                    )
 
         if choice.finish_reason and pending_tool_calls:
             chunk["tool_calls"] = [
@@ -284,7 +267,7 @@ async def _transform_stream(
                     if tool_call["args"]
                     else {},
                 )
-                for key,tool_call in pending_tool_calls.items()
+                for key, tool_call in pending_tool_calls.items()
             ]
 
             LOGGER.debug(f"Calling tools: {pending_tool_calls}")
