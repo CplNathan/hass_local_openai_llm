@@ -71,7 +71,6 @@ def _remove_unsupported_keys_from_tool_schema(schema: dict[str, Any]) -> None:
             del schema[key]
 
 
-
 def _adjust_schema(schema: dict[str, Any]) -> None:
     """Adjust the schema to be compatible with structured output requirements."""
     if schema["type"] == "object":
