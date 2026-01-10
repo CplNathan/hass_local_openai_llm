@@ -64,14 +64,15 @@ from .weaviate import WeaviateClient
 MAX_TOOL_ITERATIONS = 10
 
 
-def _adjust_schema(schema: dict[str, Any]) -> None:
-    """Adjust the schema to be compatible with OpenRouter API."""
-    # Handle allOf, anyOf, oneOf constructs by merging them into the parent schema
-    # Some APIs don't support these constructs properly (eg: llama)
+def _flatten_schema_constructs(schema: dict[str, Any]) -> None:
+    """Flatten allOf, anyOf, oneOf constructs by merging into parent schema.
+
+    Some APIs don't support these constructs properly (eg: llama).
+    """
     for key in ("allOf", "anyOf", "oneOf"):
         if key in schema:
             for sub_schema in schema[key]:
-                _adjust_schema(sub_schema)
+                _flatten_schema_constructs(sub_schema)
                 if "type" not in sub_schema:
                     for sub_key, sub_value in sub_schema.items():
                         if sub_key == "required" and sub_key in schema:
@@ -82,11 +83,16 @@ def _adjust_schema(schema: dict[str, Any]) -> None:
                             schema[sub_key] = sub_value
             del schema[key]
 
-    if "type" not in schema:
-        for invalid_key in ("required", "properties", "items"):
-            schema.pop(invalid_key, None)
-        return
+    # Recursively process nested objects and arrays
+    if schema.get("type") == "object" and "properties" in schema:
+        for prop_info in schema["properties"].values():
+            _flatten_schema_constructs(prop_info)
+    elif schema.get("type") == "array" and "items" in schema:
+        _flatten_schema_constructs(schema["items"])
 
+
+def _adjust_schema(schema: dict[str, Any]) -> None:
+    """Adjust the schema to be compatible with structured output requirements."""
     if schema["type"] == "object":
         if "properties" not in schema:
             return
@@ -98,13 +104,7 @@ def _adjust_schema(schema: dict[str, Any]) -> None:
         for prop, prop_info in schema["properties"].items():
             _adjust_schema(prop_info)
             if prop not in schema["required"]:
-                if "type" in prop_info:
-                    prop_type = prop_info["type"]
-                    # Only wrap if not already nullable
-                    if prop_type != "null" and not (
-                        isinstance(prop_type, list) and "null" in prop_type
-                    ):
-                        prop_info["type"] = [prop_type, "null"]
+                prop_info["type"] = [prop_info["type"], "null"]
                 schema["required"].append(prop)
 
     elif schema["type"] == "array":
@@ -129,6 +129,7 @@ def _format_structured_output(
         ),
     )
 
+    _flatten_schema_constructs(result_schema)
     _adjust_schema(result_schema)
 
     result["schema"] = result_schema
@@ -141,7 +142,7 @@ def _format_tool(
 ) -> ChatCompletionFunctionToolParam:
     """Format tool specification."""
     parameters = convert(tool.parameters, custom_serializer=custom_serializer)
-    _adjust_schema(parameters)
+    _flatten_schema_constructs(parameters)
     tool_spec = FunctionDefinition(
         name=tool.name,
         parameters=parameters,
