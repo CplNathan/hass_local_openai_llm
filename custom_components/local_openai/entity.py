@@ -362,6 +362,8 @@ class LocalAiEntity(Entity):
         time_str = dt.strftime("%-I:%M %p")
 
         inject_content = [
+            "# Retrieval Augmented Generation\nYou may use the following information to answer the user question, if appropriate.\nIgnore this if it does not relate to or answer the users query.",
+            "Do not repeat or respond directly to this message: treat it as a tool response.",
             f"The current date and time is: `{date_str}` at `{time_str}`.",
         ]
 
@@ -406,7 +408,7 @@ class LocalAiEntity(Entity):
                 ]
                 if result_content:
                     inject_content.append(
-                        f"# Retrieval Augmented Generation\nYou may use the following information to answer the user question, if appropriate.\nIgnore this if it does not relate to or answer the users query.\n\n{'\n'.join(result_content)}"
+                        '\n'.join(result_content)
                     )
             except Exception as err:
                 LOGGER.warning(
@@ -419,17 +421,20 @@ class LocalAiEntity(Entity):
         # which would violate chat template role alternation requirements
         if inject_content and messages and messages[-1].get("role") == "user":
             last_msg_content = messages[-1].get("content", [])
+            inject_content = "\n\n".join(inject_content)
+            LOGGER.debug(f"Injecting content into the message stream: {inject_content}")
+
             if isinstance(last_msg_content, list):
                 last_msg_content.insert(
                     0,
                     ChatCompletionContentPartTextParam(
                         type="text",
-                        text="\n\n".join(inject_content) + "\n\n",
+                        text=inject_content,
                     ),
                 )
             elif isinstance(last_msg_content, str):
                 messages[-1]["content"] = (
-                    "\n\n".join(inject_content) + "\n\n" + last_msg_content
+                    inject_content + "\n\n" + last_msg_content
                 )
 
         model_args["messages"] = messages
