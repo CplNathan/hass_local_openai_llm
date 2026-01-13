@@ -36,6 +36,16 @@ body:
       required: true
     attributes:
       label: What version of Local OpenAI LLM has the issue?
+  - type: input
+    validations:
+      required: true
+    attributes:
+      label: What inference server are you using, and its version. If using a cloud provider, which provider is this?
+  - type: input
+    validations:
+      required: true
+    attributes:
+      label: What LLM model (including quantisation, if known) are you using?
   - type: textarea
     validations:
       required: true
