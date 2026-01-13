@@ -507,6 +507,10 @@ class LocalAiEntity(Entity):
                 *messages[int(drop_index) :],
             ]
 
+            # Drop the first message as well if its a tool call result, as some models do *NOT* like this existing without the corresponding tool call request
+            if messages[1]["role"] == "tool":
+                del messages[1]
+
         return messages
 
     async def upsert_data_in_weaviate(
