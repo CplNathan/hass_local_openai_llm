@@ -362,8 +362,6 @@ class LocalAiEntity(Entity):
         time_str = dt.strftime("%-I:%M %p")
 
         inject_content = [
-            "# Retrieval Augmented Generation\nYou may use the following information to answer the user question, if appropriate.\nIgnore this if it does not relate to or answer the users query.",
-            "Do not repeat or respond directly to this message: treat it as a tool response.",
             f"The current date and time is: `{date_str}` at `{time_str}`.",
         ]
 
@@ -408,7 +406,7 @@ class LocalAiEntity(Entity):
                 ]
                 if result_content:
                     inject_content.append(
-                        '\n'.join(result_content)
+                        f"# Retrieval Augmented Generation\nYou may use the following information to answer the user question, if appropriate.\nIgnore this if it does not relate to or answer the users query.\n\n{'\n'.join(result_content)}"
                     )
             except Exception as err:
                 LOGGER.warning(
