@@ -57,6 +57,10 @@ from .const import (
     CONF_WEAVIATE_THRESHOLD,
     DOMAIN,
     LOGGER,
+    CONF_CONTENT_INJECTION_METHOD,
+    CONF_CONTENT_INJECTION_METHOD_SYSTEM,
+    CONF_CONTENT_INJECTION_METHOD_ASSISTANT,
+    CONF_CONTENT_INJECTION_METHOD_USER,
 )
 from .weaviate import WeaviateClient
 
@@ -315,6 +319,36 @@ class LocalAiEntity(Entity):
             entry_type=dr.DeviceEntryType.SERVICE,
         )
 
+    def _inject_content(self, inject_content: list, messages: list) -> None:
+        options = self.subentry.data
+        method = options.get(CONF_CONTENT_INJECTION_METHOD)
+
+        if method:
+            inject_content = "\n\n".join(inject_content)
+            LOGGER.warning(
+                f"Injecting content into the message stream as {method} content: {inject_content}"
+            )
+
+            if method == CONF_CONTENT_INJECTION_METHOD_SYSTEM:
+                messages.insert(
+                    -1,
+                    ChatCompletionSystemMessageParam(
+                        role="system", content=inject_content
+                    ),
+                )
+            elif method == CONF_CONTENT_INJECTION_METHOD_ASSISTANT:
+                messages.insert(
+                    -1,
+                    ChatCompletionAssistantMessageParam(
+                        role="assistant", content=inject_content
+                    ),
+                )
+            elif method == CONF_CONTENT_INJECTION_METHOD_USER:
+                messages.insert(
+                    -1,
+                    ChatCompletionUserMessageParam(role="user", content=inject_content),
+                )
+
     async def _async_handle_chat_log(
         self,
         chat_log: conversation.ChatLog,
@@ -405,9 +439,10 @@ class LocalAiEntity(Entity):
                     for result in results
                 ]
                 if result_content:
-                    inject_content.append(
-                        f"# Retrieval Augmented Generation\nYou may use the following information to answer the user question, if appropriate.\nIgnore this if it does not relate to or answer the users query.\n\n{'\n'.join(result_content)}"
-                    )
+                    # inject_content.append(
+                    #     f"# Retrieval Augmented Generation\nYou may use the following information to answer the user question, if appropriate.\nIgnore this if it does not relate to or answer the users query.\n\n{'\n'.join(result_content)}"
+                    # )
+                    inject_content += result_content
             except Exception as err:
                 LOGGER.warning(
                     "An unexpected exception occurred while processing RAG: %s", err
@@ -418,22 +453,8 @@ class LocalAiEntity(Entity):
         # We prepend to the last message to avoid creating consecutive user messages
         # which would violate chat template role alternation requirements
         if inject_content and messages and messages[-1].get("role") == "user":
-            last_msg_content = messages[-1].get("content", [])
-            inject_content = "\n\n".join(inject_content)
-            LOGGER.debug(f"Injecting content into the message stream: {inject_content}")
-
-            if isinstance(last_msg_content, list):
-                last_msg_content.insert(
-                    0,
-                    ChatCompletionContentPartTextParam(
-                        type="text",
-                        text=inject_content,
-                    ),
-                )
-            elif isinstance(last_msg_content, str):
-                messages[-1]["content"] = (
-                    inject_content + "\n\n" + last_msg_content
-                )
+            # last_msg_content = messages[-1].get("content", [])
+            (self._inject_content(inject_content, messages),)
 
         model_args["messages"] = messages
 
