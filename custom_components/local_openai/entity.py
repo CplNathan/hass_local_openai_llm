@@ -325,7 +325,7 @@ class LocalAiEntity(Entity):
 
         if method:
             inject_content = "\n\n".join(inject_content)
-            LOGGER.warning(
+            LOGGER.debug(
                 f"Injecting content into the message stream as {method} content: {inject_content}"
             )
 
