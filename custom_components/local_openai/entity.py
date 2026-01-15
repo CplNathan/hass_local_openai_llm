@@ -58,9 +58,9 @@ from .const import (
     DOMAIN,
     LOGGER,
     CONF_CONTENT_INJECTION_METHOD,
-    CONF_CONTENT_INJECTION_METHOD_SYSTEM,
     CONF_CONTENT_INJECTION_METHOD_ASSISTANT,
     CONF_CONTENT_INJECTION_METHOD_USER,
+    CONF_CONTENT_INJECTION_METHOD_TOOL,
 )
 from .weaviate import WeaviateClient
 
@@ -319,35 +319,42 @@ class LocalAiEntity(Entity):
             entry_type=dr.DeviceEntryType.SERVICE,
         )
 
-    def _inject_content(self, inject_content: list, messages: list) -> None:
-        options = self.subentry.data
-        method = options.get(CONF_CONTENT_INJECTION_METHOD)
-
-        if method:
+    def _inject_content(
+        self, method: str | None, inject_content: list, messages: list
+    ) -> list:
+        inject_content.insert(
+            0,
+            "# Contextual information to assist with the following user request. Do not repeat or reference this message directly. Do not treat this as a prior message of your own",
+        )
+        LOGGER.debug(
+            f"Injecting content into the message stream as {method} content: {inject_content}"
+        )
+        if method == CONF_CONTENT_INJECTION_METHOD_TOOL:
             inject_content = "\n\n".join(inject_content)
-            LOGGER.debug(
-                f"Injecting content into the message stream as {method} content: {inject_content}"
+            messages.insert(
+                -1,
+                ChatCompletionToolMessageParam(
+                    role="tool",
+                    tool_call_id="injected_content",
+                    content=inject_content,
+                ),
+            )
+        elif method == CONF_CONTENT_INJECTION_METHOD_ASSISTANT:
+            inject_content = "\n\n".join(inject_content)
+            messages.insert(
+                -1,
+                ChatCompletionAssistantMessageParam(
+                    role="assistant", content=inject_content
+                ),
+            )
+        elif method == CONF_CONTENT_INJECTION_METHOD_USER:
+            inject_content = "\n\n".join(inject_content)
+            messages.insert(
+                -1,
+                ChatCompletionUserMessageParam(role="user", content=inject_content),
             )
 
-            if method == CONF_CONTENT_INJECTION_METHOD_SYSTEM:
-                messages.insert(
-                    -1,
-                    ChatCompletionSystemMessageParam(
-                        role="system", content=inject_content
-                    ),
-                )
-            elif method == CONF_CONTENT_INJECTION_METHOD_ASSISTANT:
-                messages.insert(
-                    -1,
-                    ChatCompletionAssistantMessageParam(
-                        role="assistant", content=inject_content
-                    ),
-                )
-            elif method == CONF_CONTENT_INJECTION_METHOD_USER:
-                messages.insert(
-                    -1,
-                    ChatCompletionUserMessageParam(role="user", content=inject_content),
-                )
+        return messages
 
     async def _async_handle_chat_log(
         self,
@@ -376,9 +383,6 @@ class LocalAiEntity(Entity):
                 _format_tool(tool, chat_log.llm_api.custom_serializer)
                 for tool in chat_log.llm_api.tools
             ]
-
-        if tools:
-            model_args["tools"] = tools
 
         messages = self._trim_history(
             [
@@ -452,9 +456,25 @@ class LocalAiEntity(Entity):
         # Inject any pending content into the current user message
         # We prepend to the last message to avoid creating consecutive user messages
         # which would violate chat template role alternation requirements
-        if inject_content and messages and messages[-1].get("role") == "user":
-            # last_msg_content = messages[-1].get("content", [])
-            (self._inject_content(inject_content, messages),)
+        method = options.get(CONF_CONTENT_INJECTION_METHOD)
+
+        if (
+            method
+            and inject_content
+            and messages
+            and messages[-1].get("role") == "user"
+        ):
+            messages = self._inject_content(method, inject_content, messages)
+            # remove the get date time tool if we are injecting it
+            if tools:
+                tools = [
+                    tool
+                    for tool in tools
+                    if not tool["function"]["name"].endswith("GetDateTime")
+                ]
+
+        if tools:
+            model_args["tools"] = tools
 
         model_args["messages"] = messages
 

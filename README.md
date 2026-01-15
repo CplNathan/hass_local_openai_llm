@@ -86,16 +86,15 @@ To this end I have provided a number of options so that users can try them out a
 
 The available options are:
 
-#### <u>System</u>:
-The date and time are inserted as a second `System` message to the model, before the current user message.
+#### <u>Tool Result</u>:
+The date and time are inserted as a `Tool Call Result` message to the model, before the current user message.
 
 As long as the model does not reject it, this is the recommended method to use and produces the most reliable results during testing.
 
 #### <u>Assistant</u>:
 The date and time are inserted as an additional `Assistant` message to the model, before the current user message.
 
-In cases where the `System` role method does not work for a model, this is the next recommended to test with.
-However, if queried on it, the model will believe it was a previous message that it said.
+In cases where the `Tool Call Result` role method does not work for a model, this is the next recommended to test with.
 
 #### <u>User</u>:
 The date and time are inserted as an additional `User` message to the model, before the current user message.
