@@ -372,7 +372,6 @@ class LocalAiEntity(Entity):
 
         model_args = {
             "model": self.model,
-            "user": chat_log.conversation_id,
             "temperature": temperature,
             "parallel_tool_calls": parallel_tool_calls,
         }
