@@ -36,6 +36,7 @@ from .const import (
     CONF_PARALLEL_TOOL_CALLS,
     CONF_SERVER_NAME,
     CONF_STRIP_EMOJIS,
+    CONF_ENABLE_THINKING,
     CONF_TEMPERATURE,
     CONF_WEAVIATE_API_KEY,
     CONF_WEAVIATE_CLASS_NAME,
@@ -287,15 +288,26 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                 CONF_LLM_HASS_API,
                 default=RECOMMENDED_CONVERSATION_OPTIONS[CONF_LLM_HASS_API],
             ): SelectSelector(SelectSelectorConfig(options=llm_apis, multiple=True)),
-            vol.Optional(
+            vol.Required(
                 CONF_PARALLEL_TOOL_CALLS,
                 default=True,
             ): bool,
-            vol.Optional(
+            vol.Required(
                 CONF_STRIP_EMOJIS,
                 default=False,
             ): bool,
             vol.Optional(
+                CONF_ENABLE_THINKING,
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    mode=SelectSelectorMode.DROPDOWN,
+                    options=[
+                        SelectOptionDict(value="true", label="On"),
+                        SelectOptionDict(value="false", label="Off")
+                    ],
+                )
+            ),
+            vol.Required(
                 CONF_TEMPERATURE,
                 default=0.6,
             ): NumberSelector(
