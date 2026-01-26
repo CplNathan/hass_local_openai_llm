@@ -332,7 +332,7 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                     options=SectionConfig(collapsed=True),
                     schema=vol.Schema(
                         schema={
-                            vol.Required(CONF_CHAT_TEMPLATE_KWARGS): ObjectSelector(
+                            vol.Required(CONF_CHAT_TEMPLATE_KWARGS, default=[]): ObjectSelector(
                                 config={
                                     "multiple": True,
                                     "fields": {
